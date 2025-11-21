@@ -25,13 +25,29 @@ These instructions capture current, observable patterns in this React + TypeScri
 
 ## Adding Code
 - New UI components: create `.tsx` in `src/` or a subfolder; functional components with hooks; export defaults or named exports consistently.
-- Styling: existing pattern uses global CSS (`index.css`, `App.css`). `styled-components` is installed but unused—confirm before adopting broadly. If used, colocate styled definitions in the same file unless size warrants split.
+- Styling: project uses **`styled-components`** for component styles. Colocate styled definitions in the same file as the component (e.g., `const CanvasContainer = styled.div\`...\``). Avoid global CSS files.
 - Assets: import via relative path; for new static assets place under `src/assets/` (consistent with existing `react.svg`). Use Vite's asset handling (no manual bundler config needed).
 - Environment variables: use `import.meta.env.VITE_*` naming; add to a `.env` file if introduced (not present yet). Document additions in README if created.
 
 ## Build & Performance
 - React Compiler plugin present in `vite.config.ts`: if adding Babel plugins, append to `babel.plugins` array—do not remove existing `babel-plugin-react-compiler`.
 - Keep plugin array minimal; confirm before introducing heavy transforms (e.g. macros, emotion, etc.).
+
+## Oscilloscope Visuals — Domain Notes
+- Goal: render visuals faithful to a CRT oscilloscope (timebase, grid, intensity/persistence, XY/Lissajous mode) using **React Three Fiber** for 3D representation.
+- Rendering stack: React Three Fiber (`@react-three/fiber`) + Three.js for 3D oscilloscope; `@react-three/drei` for helpers like `OrbitControls`.
+- Component structure:
+  - `src/ui/scene/R3FCanvas.tsx`: main Canvas container (fullscreen, dark background, camera config).
+  - `src/ui/scene/components/CRTScreen.tsx`: CRT screen mesh with phosphor-like material (`meshStandardMaterial` with emissive green).
+  - `src/ui/scene/components/GridOverlay.tsx`: grid lines for time/voltage divisions using `lineSegments` and `BufferGeometry`.
+  - `src/ui/scene/components/SceneSetup.tsx`: scene lighting (`ambientLight`, `pointLight`, `directionalLight`) + `OrbitControls` for camera manipulation.
+- Data source: start with simulated `Float32Array` signals (sine, square, noise) via a small generator util. When ready, integrate Web Audio API (`AudioContext` + `AnalyserNode`) behind a thin hook like `useAudioSamples()`.
+- Props & scaling: expose `timePerDiv`, `voltsPerDiv`, `samplesPerSec`, `triggerLevel`, `mode: 'YT' | 'XY'`. Map samples → 3D vertices/positions; avoid global state.
+- Triggering: implement simple rising-edge software trigger first; draw a stable frame per animation tick. Defer advanced triggers until needed.
+- Persistence: emulate CRT persistence using shader materials with alpha decay or layered render targets; make persistence configurable.
+- Performance: minimize React re-renders; use `useRef` for mesh references; memoize geometries/materials with `useMemo`; cleanup Three.js resources in `useEffect` return.
+- Styling: grid drawn with `lineSegments` geometry; "phosphor green" (`#00ff00`) default theme; component containers use styled-components.
+- Testing/debug: `OrbitControls` enabled for camera manipulation during development. Add UI toggle to freeze animation and seed for deterministic waveforms later.
 
 ## Patterns & Guardrails
 - State: local only; before adding global state (Redux, Zustand, Context), confirm necessity.
