@@ -5,29 +5,29 @@ Interactive oscilloscope visualization editor built with React, Three.js, and We
 ## Features
 
 ### Audio Sources
+
 - **Microphone**: Real-time audio capture from system microphone
 - **Upload File**: Play and visualize uploaded audio files (MP3, WAV, etc.)
-- **Parametric Shape**: Visual-only parametric shape generation (NO AUDIO - silent shapes for XY drawing)
 
 ### Display Modes
+
 - **Y–T Mode**: Traditional time-domain waveform (voltage vs time)
 - **XY Mode**: Lissajous figures and parametric drawings (dual-channel visualization)
 
-### Parametric Shapes (Visual Only)
-13 predefined shapes available for silent XY visualization:
-- Basic: Circle, Square, Triangle, Pentagon, Hexagon
-- Special: Heart, Star, Infinity, Rose
-- Math: Lissajous, Spiral
-- Letters: A, O
+### Analog Realism (Physics Simulation)
 
-**Important**: Parametric shapes do NOT generate audio. They are visual-only for drawing in XY mode.
+- **Electron Beam Physics**: Simulates the physical movement of an electron beam, not just static lines.
+- **Phosphor Persistence**: Realistic trail decay using a history buffer, simulating the fading of phosphor on a CRT screen.
+- **Beam Intensity**: Dynamic brightness based on beam speed (slower = brighter).
 
 ### Visual Effects
-- **Persistence**: CRT phosphor decay simulation with trail length control
-- **Bloom/Glow**: Post-processing glow effect with intensity and threshold controls
-- **Audio-Reactive Mapping**: Scale, rotation, line thickness, and trail modulation based on audio features (RMS, frequency bands, beat detection)
+
+- **HDR Bloom**: Always-on high-dynamic-range bloom for realistic "glowing light" effect.
+- **CRT Atmosphere**: Vignette and subtle noise to simulate the texture of an analog screen.
+- **Audio-Reactive Mapping**: Scale, rotation, line thickness, and trail modulation based on audio features (RMS, frequency bands, beat detection).
 
 ### Audio Features Integration
+
 - FFT analysis with band splitting (low/mid/high)
 - Beat detection with confidence scoring
 - Global RMS energy tracking
@@ -44,15 +44,13 @@ Interactive oscilloscope visualization editor built with React, Three.js, and We
 
 ## Project Structure
 
-```
+```text
 src/
 ├── hooks/
 │   ├── useAudioInput.ts         # Mic/file audio source management
 │   ├── useAudioWindow.ts        # Time-domain windowing (Y–T mode)
 │   ├── useStereoAudioWindow.ts  # Stereo windowing (XY mode)
-│   ├── useAudioFeatures.ts      # FFT, RMS, beat detection
-│   ├── useParametricShape.ts    # Visual-only shape generation (NEW - NO AUDIO)
-│   └── useParametricAudio.ts    # [DEPRECATED] Audio-based shapes (unused)
+│   └── useAudioFeatures.ts      # FFT, RMS, beat detection
 ├── ui/
 │   ├── scene/
 │   │   ├── R3FCanvas.tsx        # Main 3D canvas container
@@ -61,18 +59,14 @@ src/
 │   │       ├── GridOverlay.tsx  # Time/voltage grid
 │   │       ├── Waveform.tsx     # Y–T waveform renderer
 │   │       ├── WaveformTrail.tsx # Persistence trail effect
-│   │       ├── XYPlot.tsx       # XY mode line plot
-│   │       └── SceneSetup.tsx   # Lighting + controls
+│   │       ├── XYPlot.tsx       # XY mode beam physics renderer
+│   │       └── SceneSetup.tsx   # Lighting + camera controls
 │   └── styled/
 │       ├── ScopeControls.tsx    # Styled UI primitives
 │       └── theme.ts             # Design tokens
 ├── utils/
 │   ├── sharedAudioContext.ts    # Singleton AudioContext
-│   ├── signalGenerator.ts       # Test signal generation
-│   ├── curveInterpolation.ts    # Point interpolation & normalization
-│   ├── parametricShapes.ts      # 13 shape generators
-│   ├── shapeToAudio.ts          # [DEPRECATED] Shape → audio conversion
-│   └── shapeMorphing.ts         # Shape interpolation/morphing utilities
+│   └── signalGenerator.ts       # Test signal generation
 └── main.tsx                     # App entry point
 ```
 
@@ -98,29 +92,32 @@ npm run lint
 ## Architecture Notes
 
 ### Singleton AudioContext Pattern
+
 All audio hooks share a single `AudioContext` and `AnalyserNode` via `getSharedAudioContext()` to avoid browser limitations and ensure consistent audio state.
 
 ### Audio Pipeline
-```
+
+```text
 useAudioInput (mic/file) → shared AnalyserNode → read-only hooks
                                                    ├─ useAudioWindow
                                                    ├─ useStereoAudioWindow
                                                    └─ useAudioFeatures
 ```
 
-### Parametric System (Visual-Only)
-```
-useParametricShape → Point2D[] → Float32Array signals → XYPlot (NO AUDIO)
+### Physics Rendering System
+
+```text
+Audio Signal → XYPlot (Physics Loop) → Beam Position Update → Trail Buffer Shift → Render
 ```
 
-Previous audio-based implementation (`useParametricAudio`, `shapeToAudio.ts`) has been replaced with silent visual-only approach per user request.
+The visualization now uses a physics-based approach where a "Beam Head" (Mesh + Light) moves based on signal voltage, leaving a "Trail" (BufferGeometry) that fades over time.
 
 ## Control Panels (Leva)
 
-- **Mode**: Display mode (Y–T/XY), audio source, shape selection
+- **Mode**: Display mode (Y–T/XY), audio source
 - **Timebase**: ms/div control (Y–T mode)
 - **Gain**: Auto-scale or manual gain control
-- **Visual**: Trigger marker, persistence trail, bloom/glow effects
+- **Visual**: Trigger marker, persistence trail, bloom intensity/threshold
 - **Mapping**: Audio-reactive modulation (scale, rotation, thickness, trail boost, offset)
 - **Monitors**: Read-only displays (RMS, frequency bands, beat confidence)
 
