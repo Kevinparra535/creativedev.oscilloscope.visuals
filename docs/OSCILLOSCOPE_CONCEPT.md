@@ -39,6 +39,111 @@ En el POC usamos geometrías lineales pero pretendemos emular ciertos rasgos ana
 
 La arquitectura busca que cada "fuente" de datos pueda plugarse como señal A/B (audio, síntesis, datos externos) y que la capa de render permita overlays (grid, efectos, postprocesado) sin romper el núcleo conceptual.
 
+## Fundamentos Audio Digital
+
+### Sample Rate
+
+Cantidad de muestras (samples) por segundo. Ejemplos comunes:
+
+- 44.1 kHz (música / CD)
+- 48 kHz (video / broadcast)
+- 96 kHz / 192 kHz (producción alta fidelidad)
+
+Un sample rate de 44.1 kHz significa 44,100 muestras cada segundo. Si muestras 10 ms en pantalla:
+
+```text
+10 ms = 0.010 s → 0.010 * 44,100 ≈ 441 samples
+```
+
+Esto define cuántos puntos tiene tu ventana de tiempo.
+
+### Teorema de Nyquist
+
+Frecuencia máxima reproducible ≈ sampleRate / 2.
+
+- A 44.1 kHz → Nyquist ≈ 22.05 kHz.
+- Cualquier contenido por encima se pliega (aliasing) si no se filtra.
+
+Para visual: si intentas representar una señal que cambia más rápido que Nyquist, la forma se distorsiona.
+
+### Buffers de Audio
+
+El audio llega en bloques (frames) no de a una muestra. El `AnalyserNode` te entrega un array (FFT size) que representa un pequeño segmento temporal.
+
+Patrón típico:
+
+```typescript
+const temp = new Float32Array(analyser.fftSize)
+analyser.getFloatTimeDomainData(temp) // llena temp
+// De temp seleccionas los últimos windowSize samples
+```
+
+Tu lógica convierte ese bloque en una ventana dibujable.
+
+### Canales
+
+- Mono (1 canal): ideal para modo Y–T (una sola amplitud vs tiempo).
+- Stereo (2 canales: Left, Right): habilita modo XY (X = L, Y = R) → figuras de Lissajous.
+
+Si sólo tienes mono pero quieres XY puedes sintetizar segunda señal (fase/frecuencia distinta).
+
+### Amplitud
+
+Valor instantáneo de la señal normalizado usualmente en rango [-1, 1].
+
+- 0 = silencio / centro.
+- 1 = máximo positivo.
+- -1 = máximo negativo.
+
+Mapeo vertical (mundo centrado): `y = a * (height/2) * amplitudeScale`.
+
+### Clipping
+
+Ocurre si la señal excede el rango permitido. Se recorta la cima y la forma se aplana.
+
+En visual: se ve como picos "cortados" (línea plana en ±1). Puedes colorear esos segmentos para indicar saturación en futuras capas.
+
+### Rango Dinámico y Auto-Escala
+
+Señales muy pequeñas (p.ej. ±0.02) parecen una línea casi plana. Auto-escalar:
+
+```typescript
+function computeScale(buf: Float32Array, targetPeak = 0.9) {
+  let peak = 0
+  for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]))
+  return peak === 0 ? 1 : targetPeak / peak
+}
+```
+
+Filtrado suave para evitar saltos bruscos:
+
+```typescript
+let smooth = 1
+function smoothScale(next: number, alpha = 0.2) {
+  smooth = smooth + (next - smooth) * alpha
+  return smooth
+}
+```
+
+### Filtros (Futuro)
+
+- Low-pass: atenúa altas frecuencias (suaviza curva).
+- High-pass: elimina DC / bajas frecuencias (acentúa cambios rápidos).
+- Band-pass / notch: aislar o remover bandas específicas.
+
+En esta etapa se evita para mantener pureza de representación y menor complejidad. Se añadirá cuando quieras destacar trazas artísticas (ej. sólo componentes graves / agudas).
+
+### Resumen Rápido
+
+- Sample rate: determina densidad temporal.
+- Nyquist: límites de frecuencia representable.
+- Buffer: chunk periódico de muestras para construir ventana.
+- Canales: habilitan Y–T (mono) y XY (stereo o síntesis).
+- Amplitud: valor vertical, escala ajustable.
+- Clipping: recorte del rango, puede resaltarse.
+- Filtros: mejorar claridad / estética (fase futura).
+
+
 
 ## Componentes Conceptuales
 

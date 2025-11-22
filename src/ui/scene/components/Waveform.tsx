@@ -20,19 +20,14 @@ import * as THREE from "three";
  */
 
 interface WaveformProps {
-  // Array de valores que representan la señal (-1 a 1 típicamente)
   signal: Float32Array;
-
-  // Dimensiones de la pantalla del osciloscopio
   width?: number;
   height?: number;
-
-  // Escala visual (cuánto amplificar la señal verticalmente)
   amplitudeScale?: number;
-
-  // Estilo visual
   color?: string;
   lineWidth?: number;
+  triggerIndex?: number;
+  showTrigger?: boolean;
 }
 
 const Waveform = ({
@@ -42,6 +37,8 @@ const Waveform = ({
   amplitudeScale = 1,
   color = "#00ff00",
   lineWidth = 0.02,
+  triggerIndex = 0,
+  showTrigger = false,
 }: WaveformProps) => {
   // Crear geometría: una línea que conecta todos los puntos
   const geometry = useMemo(() => {
@@ -69,16 +66,26 @@ const Waveform = ({
     return new THREE.BufferGeometry().setFromPoints(points);
   }, [signal, width, height, amplitudeScale]);
 
+  const triggerX = (triggerIndex / (signal.length - 1)) * width - width / 2;
+
   return (
-    // @ts-expect-error - R3F primitive
-    <line geometry={geometry}>
-      <lineBasicMaterial
-        color={color}
-        linewidth={lineWidth}
-        transparent={true}
-        opacity={0.9}
-      />
-    </line>
+    <group>
+      {/* @ts-expect-error - R3F primitive */}
+      <line geometry={geometry}>
+        <lineBasicMaterial
+          color={color}
+          linewidth={lineWidth}
+          transparent={true}
+          opacity={0.9}
+        />
+      </line>
+      {showTrigger && triggerIndex >= 0 && triggerIndex < signal.length && (
+        <mesh position={[triggerX, 0, 0]}>
+          <boxGeometry args={[0.02, height, 0.001]} />
+          <meshBasicMaterial color="#ff0066" transparent opacity={0.45} />
+        </mesh>
+      )}
+    </group>
   );
 };
 

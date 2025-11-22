@@ -13,6 +13,7 @@ These instructions capture current, observable patterns in this React + TypeScri
 - Type + prod build: `npm run build` (runs `tsc -b` for composite type checking, then `vite build`). Keep this order; do not remove `tsc -b`.
 - Preview built output: `npm run preview`.
 - Lint: `npm run lint` using flat ESLint config (`eslint.config.js`).
+- Runtime Controls: Project now uses **Leva** (`leva`) for interactive oscilloscope parameters (mode, timebase, gain, trigger, persistence). Prefer adding new adjustable visualization parameters via `useControls` instead of bespoke styled sliders.
 
 ## ESLint / Code Quality
 - Flat config extends: `@eslint/js` recommended, `typescript-eslint` recommended, `react-hooks` recommended, `react-refresh` Vite rules.
@@ -60,6 +61,56 @@ These instructions capture current, observable patterns in this React + TypeScri
 - Shared window length for both signals; second signal can be synthetic (phase-shift sine) when mic provides only one channel.
 - Components render conditionally: `mode === 'yt' ? <Waveform .../> : <XYPlot .../>`.
 - Future: allow dynamic source routing (mic left/right, synthesized pairs, external data). Keep abstractions thin: hooks produce `Float32Array` windows.
+ - Time scale (ms/div): user adjustable; effective window size = `sampleRate * msPerDiv * horizontalDivs / 1000`. Maintain a minimum window length to avoid underflow.
+ - Gain control: manual multiplier vs auto-scale (peak normalization with exponential smoothing). Auto mode multiplies base scale by dynamic factor; manual uses user slider.
+
+## XY Parametric Art Fundamentals
+- Parametric Curve: XY mode renders samples as x(t)=L(t), y(t)=R(t). Any designed stereo signal becomes a 2D path.
+- Lissajous Figures: Simple sine pairs with frequency ratios (f1:f2) and phase offsets φ produce stable geometric shapes (circles, ellipses, knots). Small phase changes radically alter topology.
+- Frequency Ratios: Integer ratios (e.g. 1:2, 3:5) yield closed figures; irrational or detuned ratios create drifting, evolving forms.
+- Phase Control: Adjusting relative phase shifts rotates or skews the figure; dynamic phase modulation animates morphology.
+- Ordering Matters: The temporal ordering of (x,y) points defines stroke traversal; identical spatial sets with different ordering appear tangled. Designing waveforms includes controlling traversal order.
+- Stereo Source Strategies: (1) True stereo capture; (2) Dual oscillators with independent frequency/phase; (3) Encoded parametric audio (purpose-built for drawing logos/text); (4) Procedural synthesis (e.g. additive or FM) with coordinated envelopes.
+- Closure & Looping: To draw a stable shape, ensure both channels complete an integer number of cycles over the window; windowSize selection affects perceived completeness.
+- Scaling & Normalization: Use shared auto-scale to avoid channel clipping; consider per-channel normalization only if intentional aspect ratio warping is desired.
+- Anti-Tangle Techniques: Phase-lock segments or inject brief silence/marker pulses to reposition path; advanced: reorder samples (not real-time faithful) for artistic post-processing.
+- Future Enhancements: Persistence trail for phosphor decay, variable point density, derivative-based glow (speed → brightness), path morphing via crossfades between stereo signal sets.
+
+## Postprocessing Effects Layer
+- Goal: Add optional glow/bloom for high-energy moments and beat punctuation.
+- Implementation: `@react-three/postprocessing` library wrapping Three.js `EffectComposer` + passes.
+- Bloom Pass: Emissive/bright pixels (phosphor green waveform) bleed/glow outward simulating CRT halo.
+- Controls (Leva Visual folder): `enableBloom` toggle, `bloomIntensity` (0–5, default 1.5), `bloomThreshold` (0–1, default 0.5).
+- Beat Reactivity: Bloom intensity multiplied by 1.5× on beat frames for punch.
+- Performance: Bloom adds ~2ms per frame (60fps target maintained on modern GPU). Disable for low-end hardware.
+- Future Enhancements: ChromaticAberration for CRT RGB misalignment, Vignette for screen edges, Noise for phosphor grain, FXAA for anti-aliasing.
+- Conditional Rendering: `{enableBloom && <EffectComposer><Bloom .../></EffectComposer>}` avoids overhead when disabled.
+
+## Audio Features & Visual Mapping (Audio→Visual Pipeline)
+- Goal: Evolve from passive signal viewer to reactive visual editor that maps musical characteristics (spectrum, dynamics, rhythm) to visual transformations.
+- Hook Architecture: `useAudioFeatures` separate from `useAudioWindow`/`useStereoAudioWindow` to avoid coupling time-domain windowing with frequency/energy analysis.
+- FFT Analysis: `AnalyserNode.getFloatFrequencyData` provides dB-scale magnitudes; normalize to [0,1] via `(dB + 100) / 100`. Bin resolution = sampleRate / fftSize.
+- Band Splitting: Separate spectrum into Low (20–160 Hz), Mid (160–2000 Hz), High (2000–12000 Hz). Compute per-band RMS from FFT bins for envelope following.
+- Envelope Smoothing: Exponential smoothing `env = env + (instant - env) * alpha` (alpha ~0.15) to prevent flicker; different alpha per band optional (low slower, high faster).
+- Global RMS: Time-domain energy `sqrt(Σ samples² / N)` scaled to ~[0,1]. Useful for instant amplitude-driven scaling.
+- Onset/Beat Detection: Track energy over sliding window (~1s history at update rate). Beat = `energy > mean * threshold` (threshold 1.3–1.6) + cooldown (≥120ms). Confidence = `(energy / (mean * threshold)) - 1` clamped [0,1].
+- Mapping Strategies:
+  - Scale (XY): `baseScale * (1 + rmsGlobal * scaleGain)` — globals drive figure size.
+  - Rotation (XY): Incremental `angle += bands.high.smoothed * rotateGain * 2π` — high frequencies spin figure.
+  - Thickness: `baseWidth + bands.mid.smoothed * thicknessGain * k` — mid energy fattens lines.
+  - Persistence: `baseTrail + floor(bands.low.smoothed * trailBoost)` — bass extends phosphor decay.
+  - Translation: `offsetX/Y` user-controlled; future: map `(high - low) / (high + low)` to drift.
+  - Beat Flash: Multiply amplitude/scale by `beatFlash` factor (e.g. 1.2) on beat frames for punch.
+  - Color (future): Interpolate hue based on spectral centroid or `high / (low+mid+high)` ratio; flash white on beat.
+- Leva Panel Organization:
+  - Folders: Mode, Timebase, Gain, Visual (includes bloom controls), Mapping.
+  - Visual folder: `showTrigger`, `showPersistence`, `trailLength`, `enableBloom`, `bloomIntensity`, `bloomThreshold`.
+  - Mapping sliders: `scaleGain`, `rotateGain`, `thicknessGain`, `trailBoost`, `offsetX`, `offsetY`.
+  - Read-only Monitors: `rmsGlobal`, `lowBand`, `midBand`, `highBand`, `beatConf` for live feedback.
+- Performance: Update features at ~30–40Hz (not 60fps); reuse Float32Arrays; keep history buffers bounded (≤50 entries).
+- Feature Hook Return: `{ fft, rmsGlobal, bands: { low, mid, high }, beat: { isBeat, confidence, lastBeatTime }, sampleRate }`.
+- Transform Application: Wrap `<Waveform>` / `<XYPlot>` in `<group>` with `position`, `rotation`, `scale` driven by mapped values. Apply modulation params to `amplitudeScale`, `lineWidth` props.
+- Future Enhancements: FFT-based spectral gating (filter visual by frequency band), derivative-based glow (speed → brightness), hue shift keyed to spectral centroid, postprocessing bloom on beat.
 
 ## Artistic Canvas Vision
 - Base viewer = deterministic signal plot.
@@ -72,10 +123,20 @@ These instructions capture current, observable patterns in this React + TypeScri
 - Use `BufferGeometry` with preallocated `Float32Array` updated in `useEffect`/`useMemo`.
 - Clean up geometry/material via React cleanup return.
 - Support switching mode without remounting entire Canvas (only conditional plot components).
+ - When time/gain controls change, only Y–T mode re-renders waveform; XY ignores ms/div but can adopt gain if unified look desired later.
 
 ## Trigger & Stability Notes
 - Y–T: Optional rising-edge scan to anchor left edge of window.
 - XY: For classic Lissajous, use frequency ratios (e.g. 440Hz vs 660Hz) or phase offsets. Provide simple phase param for synthetic second source.
+ - Auto-scale smoothing: `scale = scale + (target - scale) * alpha` (alpha ~0.1–0.2) to prevent flicker.
+
+## Persistence (Phosphor Decay Simulation)
+- Concept: Legacy CRT phosphor retains brightness briefly; we emulate by drawing past frames with fading opacity.
+- Implementation (current): Ring buffer of last N time-domain windows rendered as stacked lines behind the current waveform.
+- Controls: `showPersistence` toggle and `trailLength` (frames). Length 0 disables buffer writes.
+- Fading: Linear opacity falloff (newest ≈60% base, oldest → near 0). Future: exponential decay or additive blending.
+- Performance: Each frame adds one Float32Array copy; cap at sane limit (≤ 60). Rebuild minimal geometries per frame; consider merging into a single BufferGeometry for optimization later.
+- Future Enhancements: Render-to-texture with fragment shader decay, variable color shift over lifetime, glow proportional to derivative (speed), selective channel persistence.
 
 
 ## Patterns & Guardrails

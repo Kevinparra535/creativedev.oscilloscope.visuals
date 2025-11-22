@@ -11,6 +11,18 @@ export interface UseAudioWindowOptions {
   frequency?: number;
   /** Update interval in ms (avoid 60fps React re-renders) */
   updateIntervalMs?: number;
+  /** Enable simple rising-edge trigger alignment */
+  triggerEnabled?: boolean;
+  /** Trigger level to detect crossing (default 0) */
+  triggerLevel?: number;
+  /** Trigger edge type */
+  triggerEdge?: "rising" | "falling";
+  /** Enable dynamic auto-scale based on peak amplitude */
+  autoScale?: boolean;
+  /** Target visual peak after scaling (e.g. 0.9 of vertical space) */
+  targetPeak?: number;
+  /** Exponential smoothing factor for scale (0..1) */
+  scaleAlpha?: number;
 }
 
 /**
@@ -26,12 +38,22 @@ const useAudioWindow = ({
   source = "mic",
   frequency = 440,
   updateIntervalMs = 33, // ~30fps render updates
+  triggerEnabled = false,
+  triggerLevel = 0,
+  triggerEdge = "rising",
+  autoScale = false,
+  targetPeak = 0.9,
+  scaleAlpha = 0.2,
 }: UseAudioWindowOptions = {}) => {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const dataRef = useRef<Float32Array>(new Float32Array(windowSize));
-  const [signal, setSignal] = useState<Float32Array>(
+  const [windowBuf, setWindowBuf] = useState<Float32Array>(
     () => new Float32Array(windowSize)
   );
+  const scaleRef = useRef<number>(1);
+  const [scale, setScale] = useState<number>(1);
+  const [triggerIndex, setTriggerIndex] = useState<number>(0);
+  const [sampleRate, setSampleRate] = useState<number>(44100);
   // Removed requestAnimationFrame usage; we rely on interval updates for controlled re-render frequency.
   const intervalRef = useRef<number | null>(null);
   const disposedRef = useRef(false);
@@ -44,6 +66,8 @@ const useAudioWindow = ({
     const analyser = ctx.createAnalyser();
     analyser.fftSize = fftSize;
     analyserRef.current = analyser;
+    // sampleRate stable for AudioContext lifetime; direct assign to state via microtask to avoid synchronous setState warning
+    Promise.resolve().then(() => setSampleRate(ctx.sampleRate));
 
     const connectMic = async () => {
       try {
@@ -80,11 +104,59 @@ const useAudioWindow = ({
       if (!analyserRef.current) return;
       const temp = new Float32Array(analyserRef.current.fftSize);
       analyserRef.current.getFloatTimeDomainData(temp);
-      // Copy the last windowSize samples (time window)
+      // Latest window slice
       const sliceStart = Math.max(0, temp.length - windowSize);
-      dataRef.current.set(temp.subarray(sliceStart, sliceStart + windowSize));
-      // Create a new Float32Array to trigger React state update (immutable)
-      setSignal(new Float32Array(dataRef.current));
+      const slice = temp.subarray(sliceStart, sliceStart + windowSize);
+
+      let aligned: Float32Array;
+      let foundTrigger = 0;
+      if (triggerEnabled) {
+        // Find trigger index
+        let idx = 0;
+        for (let i = 1; i < slice.length; i++) {
+          if (triggerEdge === "rising") {
+            if (slice[i - 1] < triggerLevel && slice[i] >= triggerLevel) {
+              idx = i;
+              break;
+            }
+          } else {
+            if (slice[i - 1] > triggerLevel && slice[i] <= triggerLevel) {
+              idx = i;
+              break;
+            }
+          }
+        }
+        foundTrigger = idx;
+        if (idx === 0) {
+          aligned = new Float32Array(slice); // no trigger found, use as-is
+        } else {
+          aligned = new Float32Array(windowSize);
+          const firstLen = slice.length - idx;
+          aligned.set(slice.subarray(idx));
+          if (firstLen < windowSize) {
+            aligned.set(slice.subarray(0, windowSize - firstLen), firstLen);
+          }
+        }
+      } else {
+        aligned = new Float32Array(slice); // copy for immutability
+      }
+
+      // Auto-scale
+      if (autoScale) {
+        let peak = 0;
+        for (let i = 0; i < aligned.length; i++) {
+          const v = Math.abs(aligned[i]);
+          if (v > peak) peak = v;
+        }
+        const target = peak === 0 ? 1 : targetPeak / peak;
+        // Smooth
+        scaleRef.current = scaleRef.current + (target - scaleRef.current) * scaleAlpha;
+        setScale(scaleRef.current);
+      }
+
+      dataRef.current.set(aligned);
+      setTriggerIndex(foundTrigger);
+      setWindowBuf(new Float32Array(dataRef.current));
     }, updateIntervalMs);
 
     return () => {
@@ -93,9 +165,20 @@ const useAudioWindow = ({
         window.clearInterval(intervalRef.current);
       ctx.close().catch(() => {});
     };
-  }, [fftSize, windowSize, source, frequency, updateIntervalMs]);
-
-  return signal;
+  }, [
+    fftSize,
+    windowSize,
+    source,
+    frequency,
+    updateIntervalMs,
+    triggerEnabled,
+    triggerLevel,
+    triggerEdge,
+    autoScale,
+    targetPeak,
+    scaleAlpha,
+  ]);
+  return { window: windowBuf, scale, sampleRate, triggerIndex };
 };
 
 export default useAudioWindow;
