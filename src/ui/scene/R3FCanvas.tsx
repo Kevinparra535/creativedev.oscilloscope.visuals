@@ -27,6 +27,7 @@ const R3FCanvas = () => {
   const [uploadedFile, setUploadedFile] = useState<string>("");
   const [beamSpeed, setBeamSpeed] = useState(1000);
   const [cubeRotationSpeed, setCubeRotationSpeed] = useState(0);
+  const [cloneCount, setCloneCount] = useState(1);
 
   const { mode, figureType, audioSource, textInput } = useControls({
     Mode: folder({
@@ -97,16 +98,18 @@ const R3FCanvas = () => {
   // Cube Signal Generator
   const { signalA: cubeA, signalB: cubeB } = useCubeSignal({
     active: figureType === "cube",
-    pointsCount: 2000,
+    pointsCount: cloneCount > 1 ? 4000 : 2000,
     rotationSpeed: cubeRotationSpeed,
+    cloneCount,
   });
 
   // Text Signal Generator
   const { signalA: textA, signalB: textB } = useTextSignal({
     active: figureType === "text",
-    text: textInput,
-    pointsCount: 2000,
+    text: textInput.substring(0, 12), // Limit to 12 chars to prevent overflow
+    pointsCount: cloneCount > 1 ? 4000 : 2000,
     rotationSpeed: cubeRotationSpeed,
+    cloneCount,
   });
 
   // Speed Ramp Logic for Cube/Text Mode
@@ -115,6 +118,23 @@ const R3FCanvas = () => {
       let frameId: number;
       const startTime = performance.now();
       const duration = 30000; // 30 seconds ramp for smoother buildup
+      
+      // Reset clone state on mode change (deferred to avoid sync update warning)
+      const resetTimer = setTimeout(() => setCloneCount(1), 0);
+      
+      // Timer for multi-element appearance (Pentagon formation)
+      // Starts at 40s, adds one every 2s until 5
+      const formationTimers: NodeJS.Timeout[] = [];
+      
+      const startFormation = setTimeout(() => {
+        let count = 1;
+        const interval = setInterval(() => {
+          count++;
+          setCloneCount(count);
+          if (count >= 5) clearInterval(interval);
+        }, 2000); // Add a new clone every 2 seconds
+        formationTimers.push(setTimeout(() => clearInterval(interval), 12000)); // Safety clear
+      }, 40000);
 
       const animate = () => {
         const elapsed = performance.now() - startTime;
@@ -145,12 +165,18 @@ const R3FCanvas = () => {
       // Start animation loop
       frameId = requestAnimationFrame(animate);
 
-      return () => cancelAnimationFrame(frameId);
+      return () => {
+        cancelAnimationFrame(frameId);
+        clearTimeout(startFormation);
+        clearTimeout(resetTimer);
+        formationTimers.forEach(t => clearTimeout(t));
+      };
     } else {
       // Defer state update to avoid synchronous effect warning
       const timeoutId = setTimeout(() => {
         setBeamSpeed(1000);
         setCubeRotationSpeed(0);
+        setCloneCount(1);
       }, 0);
       return () => clearTimeout(timeoutId);
     }

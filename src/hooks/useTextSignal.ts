@@ -7,27 +7,29 @@ interface UseTextSignalOptions {
   text: string;
   pointsCount?: number;
   rotationSpeed?: number;
+  cloneCount?: number;
 }
 
 // Helper function for point in polygon check (Ray Casting algorithm)
-function isPointInPolygon(point: THREE.Vector2, vs: THREE.Vector2[]) {
-  const x = point.x, y = point.y;
-  let inside = false;
-  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-      const xi = vs[i].x, yi = vs[i].y;
-      const xj = vs[j].x, yj = vs[j].y;
-      const intersect = ((yi > y) !== (yj > y))
-          && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-      if (intersect) inside = !inside;
-  }
-  return inside;
-}
+// function isPointInPolygon(point: THREE.Vector2, vs: THREE.Vector2[]) {
+//   const x = point.x, y = point.y;
+//   let inside = false;
+//   for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+//       const xi = vs[i].x, yi = vs[i].y;
+//       const xj = vs[j].x, yj = vs[j].y;
+//       const intersect = ((yi > y) !== (yj > y))
+//           && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+//       if (intersect) inside = !inside;
+//   }
+//   return inside;
+// }
 
 export default function useTextSignal({
   active,
   text,
   pointsCount = 2000,
   rotationSpeed = 1,
+  cloneCount = 1,
 }: UseTextSignalOptions) {
   const [signalA, setSignalA] = useState<Float32Array>(
     new Float32Array(pointsCount)
@@ -76,7 +78,6 @@ export default function useTextSignal({
       
       // Extract points
       const allPoints: THREE.Vector3[] = [];
-      const depth = 0.2; // Extrusion depth
       
       // Calculate bounding box to center text
       const geometry = new THREE.ShapeGeometry(shapes);
@@ -86,90 +87,25 @@ export default function useTextSignal({
         geometry.boundingBox.getCenter(centerOffset);
       }
 
-      // 1. Generate Scanlines for "Fill" (Horizontal lines)
-      // This looks much cleaner on an oscilloscope than triangulation
-      const scanlineSpacing = 0.15; // Density of fill lines
-      
-      shapes.forEach((shape) => {
-        // Get shape bounds
-        const shapeGeometry = new THREE.ShapeGeometry(shape);
-        shapeGeometry.computeBoundingBox();
-        const bounds = shapeGeometry.boundingBox;
-        
-        if (!bounds) return;
-
-        // Discretize shape and holes for point-inside checks
-        const shapePoints = shape.getPoints(12);
-        const holesPoints = shape.holes.map(h => h.getPoints(12));
-
-        // Helper to check if point is inside shape but outside holes
-        const isInside = (pt: THREE.Vector2) => {
-           // Check inside outer shape
-           if (!isPointInPolygon(pt, shapePoints)) return false;
-           
-           // Check outside all holes
-           for (const hole of holesPoints) {
-             if (isPointInPolygon(pt, hole)) return false;
-           }
-           return true;
-        };
-
-        // Scan vertically
-        for (let y = bounds.min.y; y <= bounds.max.y; y += scanlineSpacing) {
-          let lineStart: THREE.Vector2 | null = null;
-          
-          // Scan horizontally with fine step to detect segments
-          const resolution = 0.05;
-          for (let x = bounds.min.x; x <= bounds.max.x; x += resolution) {
-            const pt = new THREE.Vector2(x, y);
-            const inside = isInside(pt);
-
-            if (inside) {
-              if (!lineStart) lineStart = pt; // Start of a segment
-            } else {
-              if (lineStart) {
-                // End of a segment, push line
-                const vStart = new THREE.Vector3(lineStart.x, lineStart.y, depth / 2);
-                const vEnd = new THREE.Vector3(x - resolution, y, depth / 2);
-                allPoints.push(vStart, vEnd);
-                lineStart = null;
-              }
-            }
-          }
-          // Close pending segment at end of row
-          if (lineStart) {
-             const vStart = new THREE.Vector3(lineStart.x, lineStart.y, depth / 2);
-             const vEnd = new THREE.Vector3(bounds.max.x, y, depth / 2);
-             allPoints.push(vStart, vEnd);
-          }
-        }
-      });
-      
-      // 2. Add Extrusion Lines (Connect Front to Back) & Outlines
-      // We iterate the shapes to get the outline
+      // Simplified Outline Logic (Oscilloscope Style)
+      // Just the path of the letters, sequential, left to right
       shapes.forEach((shape) => {
         const processPath = (path: THREE.Path | THREE.Shape) => {
-          const points = path.getPoints(6); // Lower resolution for outline
+          const points = path.getPoints(); 
           
-          // Create Back Loop (z = -depth/2)
-          const backPoints = points.map(p => new THREE.Vector3(p.x, p.y, -depth / 2));
-          // Front points for connection
-          const frontPoints = points.map(p => new THREE.Vector3(p.x, p.y, depth / 2));
+          // Add points to path
+          points.forEach(p => {
+            allPoints.push(new THREE.Vector3(p.x, p.y, 0));
+          });
           
-          // Draw Back Loop
-          for (let i = 0; i < backPoints.length - 1; i++) {
-             allPoints.push(backPoints[i], backPoints[i+1]);
-          }
-          // Close loop
-          allPoints.push(backPoints[backPoints.length-1], backPoints[0]);
-
-          // Connect Front to Back (Struts)
-          for (let i = 0; i < frontPoints.length; i++) {
-            allPoints.push(frontPoints[i], backPoints[i]);
+          // Close the loop
+          if (points.length > 0) {
+            allPoints.push(new THREE.Vector3(points[0].x, points[0].y, 0));
           }
         };
 
         processPath(shape);
+        
         if (shape.holes && shape.holes.length > 0) {
            shape.holes.forEach(hole => processPath(hole));
         }
@@ -184,55 +120,70 @@ export default function useTextSignal({
       // Interpolate path to fit pointsCount
       const totalSourcePoints = allPoints.length;
       
-      // We want to traverse the text points and map them to the buffer
-      // If buffer is larger than points, we interpolate.
-      // If smaller, we skip.
-      
-      for (let i = 0; i < pointsCount; i++) {
-        // Map buffer index to source point index
-        // Use a "virtual" index that loops or clamps
-        // For text, we probably want to loop the drawing if pointsCount is huge, 
-        // or just stretch the drawing.
-        // Let's stretch/interpolate along the total length of the text path.
+      // If dual, we split the buffer in two halves
+      const passes = Math.max(1, cloneCount);
+      const pointsPerPass = Math.floor(pointsCount / passes);
+
+      let bufferIdx = 0;
+
+      for (let pass = 0; pass < passes; pass++) {
+        // Calculate offset for circular formation
+        let xOffset = 0;
+        let yOffset = 0;
         
-        const t = i / (pointsCount - 1);
-        const virtualIndex = t * (totalSourcePoints - 1);
-        const idx1 = Math.floor(virtualIndex);
-        const idx2 = Math.min(idx1 + 1, totalSourcePoints - 1);
-        const frac = virtualIndex - idx1;
+        if (passes > 1) {
+          const radius = 1.6; // Larger radius for text so they don't overlap
+          // Distribute evenly in a circle
+          const angle = (pass / passes) * Math.PI * 2 + Math.PI / 2;
+          xOffset = Math.cos(angle) * radius;
+          yOffset = Math.sin(angle) * radius;
+        }
 
-        const p1 = allPoints[idx1];
-        const p2 = allPoints[idx2];
+        for (let i = 0; i < pointsPerPass; i++) {
+          // Map buffer index to source point index
+          const t = i / (pointsPerPass - 1);
+          const virtualIndex = t * (totalSourcePoints - 1);
+          const idx1 = Math.floor(virtualIndex);
+          const idx2 = Math.min(idx1 + 1, totalSourcePoints - 1);
+          const frac = virtualIndex - idx1;
 
-        // Interpolate local 2D point (before 3D transform)
-        // Actually, let's center them first
-        const x1 = p1.x - centerOffset.x;
-        const y1 = p1.y - centerOffset.y;
-        const z1 = p1.z - centerOffset.z; // z is 0, so just -centerOffset.z (which is 0 usually)
+          const p1 = allPoints[idx1];
+          const p2 = allPoints[idx2];
 
-        const x2 = p2.x - centerOffset.x;
-        const y2 = p2.y - centerOffset.y;
-        const z2 = p2.z - centerOffset.z;
+          // Interpolate local 2D point (before 3D transform)
+          const x1 = p1.x - centerOffset.x;
+          const y1 = p1.y - centerOffset.y;
+          const z1 = p1.z - centerOffset.z;
 
-        const ix = x1 + (x2 - x1) * frac;
-        const iy = y1 + (y2 - y1) * frac;
-        const iz = z1 + (z2 - z1) * frac;
+          const x2 = p2.x - centerOffset.x;
+          const y2 = p2.y - centerOffset.y;
+          const z2 = p2.z - centerOffset.z;
 
-        // Create vector and apply rotation
-        const v = new THREE.Vector3(ix, iy, iz);
-        
-        // Apply 3D rotation
-        v.applyQuaternion(quaternion);
+          const ix = x1 + (x2 - x1) * frac;
+          const iy = y1 + (y2 - y1) * frac;
+          const iz = z1 + (z2 - z1) * frac;
 
-        // Perspective Projection
-        const dist = 2.5; 
-        const scale = 0.4; // Reduced scale to fit grid
-        
-        const px = (v.x / (v.z + dist)) * scale;
-        const py = (v.y / (v.z + dist)) * scale;
+          // Create vector and apply rotation
+          const v = new THREE.Vector3(ix, iy, iz);
+          
+          // Apply 3D rotation
+          v.applyQuaternion(quaternion);
 
-        bufferA[i] = px;
-        bufferB[i] = py;
+          // Apply World Offset
+          v.x += xOffset;
+          v.y += yOffset;
+
+          // Perspective Projection
+          const dist = 2.5; 
+          const scale = passes > 1 ? 0.2 : 0.4; // Reduced scale to fit grid
+          
+          const px = (v.x / (v.z + dist)) * scale;
+          const py = (v.y / (v.z + dist)) * scale;
+
+          bufferA[bufferIdx] = px;
+          bufferB[bufferIdx] = py;
+          bufferIdx++;
+        }
       }
 
       setSignalA(bufferA);
@@ -246,7 +197,7 @@ export default function useTextSignal({
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [active, font, text, pointsCount]);
+  }, [active, font, text, pointsCount, cloneCount]);
 
   return { signalA, signalB };
 }
