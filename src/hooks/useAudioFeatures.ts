@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getSharedAudioContext } from "../utils/sharedAudioContext";
 
 export interface UseAudioFeaturesOptions {
   fftSize?: 256 | 512 | 1024 | 2048 | 4096 | 8192;
@@ -65,45 +66,12 @@ const useAudioFeatures = ({
   const intervalRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const AudioCtx: typeof AudioContext =
-      window.AudioContext ||
-      (window as unknown as { AudioContext: typeof AudioContext }).AudioContext;
-    const ctx = new AudioCtx();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = fftSize;
-    analyser.smoothingTimeConstant = 0; // raw data for envelope control
+    const { context: ctx, analyser } = getSharedAudioContext();
     analyserRef.current = analyser;
     Promise.resolve().then(() => setSampleRate(ctx.sampleRate));
 
-    const connectMic = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-        const src = ctx.createMediaStreamSource(stream);
-        src.connect(analyser);
-      } catch (e) {
-        console.warn(
-          "[useAudioFeatures] Mic unavailable, using oscillator fallback.",
-          e
-        );
-        connectOsc();
-      }
-    };
-
-    const connectOsc = () => {
-      const osc = ctx.createOscillator();
-      osc.type = "sine";
-      osc.frequency.value = frequency;
-      osc.connect(analyser);
-      osc.start();
-    };
-
-    if (source === "mic") {
-      void connectMic();
-    } else {
-      connectOsc();
-    }
+    // Don't connect sources here - useAudioInput handles all source connections
+    // This hook only reads from the shared analyser for feature extraction
 
     // Analysis loop
     intervalRef.current = window.setInterval(() => {
@@ -197,7 +165,7 @@ const useAudioFeatures = ({
 
     return () => {
       if (intervalRef.current) window.clearInterval(intervalRef.current);
-      ctx.close().catch(() => {});
+      // Don't close shared AudioContext
     };
   }, [
     fftSize,

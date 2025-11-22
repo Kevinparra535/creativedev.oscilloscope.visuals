@@ -49,7 +49,9 @@ const WaveformTrail = ({
         const points: THREE.Vector3[] = [];
         for (let i = 0; i < data.length; i++) {
           const x = (i / (data.length - 1)) * width - width / 2;
-          const y = data[i] * amplitudeScale * (height / 4);
+          // Clip amplitude to stay within grid bounds
+          const clippedAmplitude = Math.max(-1, Math.min(1, data[i] * amplitudeScale));
+          const y = clippedAmplitude * (height / 4);
           points.push(new THREE.Vector3(x, y, 0.005));
         }
         const geometry = new THREE.BufferGeometry().setFromPoints(points);

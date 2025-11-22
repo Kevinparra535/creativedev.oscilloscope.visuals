@@ -1,26 +1,25 @@
 import { useEffect, useRef, useState } from "react";
+import { getSharedAudioContext, resumeSharedAudioContext } from "../utils/sharedAudioContext";
 
-export type AudioInputSource = "mic" | "file" | "osc";
+export type AudioInputSource = "mic" | "file";
 
 export interface UseAudioInputOptions {
   source: AudioInputSource;
-  frequency?: number; // for osc fallback
   onSourceReady?: (analyser: AnalyserNode) => void;
 }
 
 /**
- * useAudioInput: Manages audio source (mic, uploaded file, or oscillator).
+ * useAudioInput: Manages audio source (mic or uploaded file).
  * Returns AudioContext and AnalyserNode for downstream hooks.
  */
 const useAudioInput = ({
   source,
-  frequency = 440,
   onSourceReady,
 }: UseAudioInputOptions) => {
   const contextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const sourceNodeRef = useRef<
-    MediaStreamAudioSourceNode | AudioBufferSourceNode | OscillatorNode | null
+    MediaStreamAudioSourceNode | AudioBufferSourceNode | null
   >(null);
   const [isReady, setIsReady] = useState(false);
   const fileBufferRef = useRef<AudioBuffer | null>(null);
@@ -48,6 +47,9 @@ const useAudioInput = ({
 
     cleanup();
 
+    // Resume context if suspended (browser autoplay policy)
+    await resumeSharedAudioContext();
+
     const arrayBuffer = await file.arrayBuffer();
     const audioBuffer = await contextRef.current.decodeAudioData(arrayBuffer);
     fileBufferRef.current = audioBuffer;
@@ -67,24 +69,26 @@ const useAudioInput = ({
   };
 
   useEffect(() => {
-    const AudioCtx: typeof AudioContext =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext })
-        .webkitAudioContext;
-
-    const ctx = new AudioCtx();
+    // Use shared singleton AudioContext
+    const { context: ctx, analyser: analyserNode } = getSharedAudioContext();
     contextRef.current = ctx;
-
-    const analyserNode = ctx.createAnalyser();
-    analyserNode.fftSize = 2048;
-    analyserNode.smoothingTimeConstant = 0;
-    // Connect analyser to destination to hear audio
-    analyserNode.connect(ctx.destination);
     analyserRef.current = analyserNode;
 
     const connectSource = async () => {
       if (!analyserNode) return;
-      cleanup();
+      
+      // Cleanup previous source before connecting new one
+      if (sourceNodeRef.current) {
+        try {
+          if ("stop" in sourceNodeRef.current) {
+            sourceNodeRef.current.stop();
+          }
+          sourceNodeRef.current.disconnect();
+        } catch (e) {
+          console.error("Error disconnecting previous source:", e);
+        }
+        sourceNodeRef.current = null;
+      }
 
       if (source === "mic") {
         try {
@@ -96,25 +100,10 @@ const useAudioInput = ({
           sourceNodeRef.current = micSource;
           setIsReady(true);
           onSourceReady?.(analyserNode);
-        } catch {
-          console.warn("Mic access denied, falling back to oscillator");
-          // Fallback to osc
-          const osc = ctx.createOscillator();
-          osc.frequency.value = frequency;
-          osc.connect(analyserNode);
-          osc.start();
-          sourceNodeRef.current = osc;
-          setIsReady(true);
-          onSourceReady?.(analyserNode);
+        } catch (error) {
+          console.error("Microphone access denied:", error);
+          setIsReady(false);
         }
-      } else if (source === "osc") {
-        const osc = ctx.createOscillator();
-        osc.frequency.value = frequency;
-        osc.connect(analyserNode);
-        osc.start();
-        sourceNodeRef.current = osc;
-        setIsReady(true);
-        onSourceReady?.(analyserNode);
       }
       // 'file' source is handled via loadAudioFile callback
     };
@@ -123,9 +112,9 @@ const useAudioInput = ({
 
     return () => {
       cleanup();
-      ctx.close();
+      // Don't close shared context here
     };
-  }, [source, frequency, onSourceReady]);
+  }, [source, onSourceReady]);
 
   return {
     analyserRef, // Return ref instead of .current

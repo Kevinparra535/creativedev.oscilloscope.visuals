@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { getSharedAudioContext } from "../utils/sharedAudioContext";
 
 export interface UseAudioWindowOptions {
   /** Size of analyser FFT (power of two). Determines internal buffer size. */
@@ -59,45 +60,13 @@ const useAudioWindow = ({
   const disposedRef = useRef(false);
 
   useEffect(() => {
-    const AudioCtx: typeof AudioContext =
-      window.AudioContext ||
-      (window as unknown as { AudioContext: typeof AudioContext }).AudioContext;
-    const ctx = new AudioCtx();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = fftSize;
+    const { context: ctx, analyser } = getSharedAudioContext();
     analyserRef.current = analyser;
     // sampleRate stable for AudioContext lifetime; direct assign to state via microtask to avoid synchronous setState warning
     Promise.resolve().then(() => setSampleRate(ctx.sampleRate));
 
-    const connectMic = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-        const sourceNode = ctx.createMediaStreamSource(stream);
-        sourceNode.connect(analyser);
-      } catch (e) {
-        console.warn(
-          "[useAudioWindow] Microphone unavailable, falling back to oscillator.",
-          e
-        );
-        connectOscillator();
-      }
-    };
-
-    const connectOscillator = () => {
-      const osc = ctx.createOscillator();
-      osc.type = "sine";
-      osc.frequency.value = frequency;
-      osc.connect(analyser);
-      osc.start();
-    };
-
-    if (source === "mic") {
-      void connectMic();
-    } else {
-      connectOscillator();
-    }
+    // Don't connect sources here - useAudioInput handles all source connections
+    // This hook only reads from the shared analyser
 
     // Periodic update without forcing 60 re-renders
     intervalRef.current = window.setInterval(() => {
@@ -163,7 +132,7 @@ const useAudioWindow = ({
       disposedRef.current = true;
       if (intervalRef.current !== null)
         window.clearInterval(intervalRef.current);
-      ctx.close().catch(() => {});
+      // Don't close shared AudioContext
     };
   }, [
     fftSize,

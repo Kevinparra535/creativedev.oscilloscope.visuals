@@ -54,7 +54,9 @@ const Waveform = ({
       // Y = amplitud (valor de la señal en ese momento)
       // signal[i] es típicamente -1 a 1 para audio
       const amplitude = signal[i];
-      const y = amplitude * amplitudeScale * (height / 4); // Escalar a pantalla
+      // Clip amplitude to stay within grid bounds (-1 to 1 max)
+      const clippedAmplitude = Math.max(-1, Math.min(1, amplitude * amplitudeScale));
+      const y = clippedAmplitude * (height / 4); // Escalar a pantalla
 
       // Z = profundidad (0.01 para estar ligeramente al frente)
       const z = 0.01;

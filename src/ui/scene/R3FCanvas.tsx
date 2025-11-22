@@ -41,7 +41,7 @@ const R3FCanvas = () => {
     Mode: folder({
       mode: { options: { "Y–T": "yt", XY: "xy" }, value: "yt" },
       audioSource: {
-        options: { Microphone: "mic", "Upload File": "file", Oscillator: "osc" },
+        options: { Microphone: "mic", "Upload File": "file" },
         value: "mic",
         label: "Audio Source",
       },
@@ -78,8 +78,7 @@ const R3FCanvas = () => {
 
   // Centralized audio input management
   const { loadAudioFile } = useAudioInput({
-    source: audioSource as "mic" | "file" | "osc",
-    frequency: 440,
+    source: audioSource as "mic" | "file",
   });
 
   const handleFileUpload = (file: File) => {
@@ -90,8 +89,7 @@ const R3FCanvas = () => {
   // Audio features for visual mapping
   const { rmsGlobal, bands, beat } = useAudioFeatures({
     fftSize: 2048,
-    source: audioSource === "file" ? "mic" : (audioSource as "mic" | "osc"),
-    frequency: 440,
+    source: "mic",
     updateIntervalMs: 33,
     smoothingAlpha: 0.15,
     beatThreshold: 1.4,
@@ -112,10 +110,9 @@ const R3FCanvas = () => {
     scale: dynamicScale,
     triggerIndex,
   } = useAudioWindow({
-    source: audioSource === "file" ? "mic" : (audioSource as "mic" | "osc"),
+    source: "mic",
     windowSize: effectiveWindowSize,
     fftSize: 2048,
-    frequency: 440,
     triggerEnabled: true,
     triggerLevel: 0,
     triggerEdge: "rising",

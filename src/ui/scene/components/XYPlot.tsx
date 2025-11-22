@@ -35,9 +35,14 @@ export default function XYPlot({
 
   const positions = useMemo(() => {
     const pos = new Float32Array(length * 3);
+    const maxX = width / 2;
+    const maxY = height / 2;
     for (let i = 0; i < length; i++) {
-      const x = signalA[i] * (width / 2) * scaleX;
-      const y = signalB[i] * (height / 2) * scaleY;
+      // Apply clipping to keep within grid bounds
+      const rawX = signalA[i] * (width / 2) * scaleX;
+      const rawY = signalB[i] * (height / 2) * scaleY;
+      const x = Math.max(-maxX, Math.min(maxX, rawX));
+      const y = Math.max(-maxY, Math.min(maxY, rawY));
       const base = i * 3;
       pos[base] = x;
       pos[base + 1] = y;
