@@ -27,70 +27,6 @@ export default function useCubeSignal({
     speedRef.current = rotationSpeed;
   }, [rotationSpeed]);
 
-  // Define Cube Vertices (Normalized -1 to 1)
-  const vertices = [
-    new THREE.Vector3(-0.5, -0.5, -0.5), // 0
-    new THREE.Vector3(0.5, -0.5, -0.5), // 1
-    new THREE.Vector3(0.5, 0.5, -0.5), // 2
-    new THREE.Vector3(-0.5, 0.5, -0.5), // 3
-    new THREE.Vector3(-0.5, -0.5, 0.5), // 4
-    new THREE.Vector3(0.5, -0.5, 0.5), // 5
-    new THREE.Vector3(0.5, 0.5, 0.5), // 6
-    new THREE.Vector3(-0.5, 0.5, 0.5), // 7
-  ];
-
-  // Define a continuous path covering all edges
-  // 0->1->2->3->0 (Back) -> 4 (Connector) -> 5->6->7->4 (Front) -> 7->3 (Connector) -> 2->6 (Connector) -> 5->1 (Connector)
-  // A simpler Eulerian-like path or just retracing
-  const pathIndices = [
-    0,
-    1,
-    2,
-    3,
-    0, // Back Face
-    4,
-    5,
-    6,
-    7,
-    4, // Front Face (via 0->4)
-    0,
-    3,
-    7,
-    6,
-    2,
-    1,
-    5,
-    4, // Connectors and remaining edges
-  ];
-  // Note: This path jumps between some points if not adjacent.
-  // 0->4 is an edge. 4->0 is edge.
-  // Let's verify adjacency:
-  // 0-1 (ok), 1-2 (ok), 2-3 (ok), 3-0 (ok)
-  // 0-4 (ok)
-  // 4-5 (ok), 5-6 (ok), 6-7 (ok), 7-4 (ok)
-  // 4-0 (ok) -> 0-3 (ok) -> 3-7 (ok) -> 7-6 (ok) -> 6-2 (ok) -> 2-1 (ok) -> 1-5 (ok) -> 5-4 (ok)
-  // This covers all 12 edges?
-  // Edges: 0-1, 1-2, 2-3, 3-0 (4)
-  //        4-5, 5-6, 6-7, 7-4 (4)
-  //        0-4, 1-5, 2-6, 3-7 (4)
-  // Total 12.
-  // My path:
-  // 0-1, 1-2, 2-3, 3-0
-  // 0-4
-  // 4-5, 5-6, 6-7, 7-4
-  // 4-0 (Retrace)
-  // 0-3 (Retrace)
-  // 3-7 (Edge)
-  // 7-6 (Retrace)
-  // 6-2 (Edge)
-  // 2-1 (Retrace)
-  // 1-5 (Edge)
-  // 5-4 (Retrace)
-  // It covers 3-7, 6-2, 1-5.
-  // Yes, it covers all.
-
-  const path = [0, 1, 2, 3, 0, 4, 5, 6, 7, 4, 0, 3, 7, 6, 2, 1, 5];
-
   useEffect(() => {
     if (!active) return;
 
@@ -163,3 +99,18 @@ export default function useCubeSignal({
 
   return { signalA, signalB };
 }
+
+// Define Cube Vertices (Normalized -1 to 1)
+const vertices = [
+  new THREE.Vector3(-0.5, -0.5, -0.5), // 0
+  new THREE.Vector3(0.5, -0.5, -0.5), // 1
+  new THREE.Vector3(0.5, 0.5, -0.5), // 2
+  new THREE.Vector3(-0.5, 0.5, -0.5), // 3
+  new THREE.Vector3(-0.5, -0.5, 0.5), // 4
+  new THREE.Vector3(0.5, -0.5, 0.5), // 5
+  new THREE.Vector3(0.5, 0.5, 0.5), // 6
+  new THREE.Vector3(-0.5, 0.5, 0.5), // 7
+];
+
+const path = [0, 1, 2, 3, 0, 4, 5, 6, 7, 4, 0, 3, 7, 6, 2, 1, 5];
+

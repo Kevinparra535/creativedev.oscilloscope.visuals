@@ -20,6 +20,7 @@ import useStereoAudioWindow from "../../hooks/useStereoAudioWindow";
 import useAudioFeatures from "../../hooks/useAudioFeatures";
 import useAudioInput from "../../hooks/useAudioInput";
 import useCubeSignal from "../../hooks/useCubeSignal";
+import useTextSignal from "../../hooks/useTextSignal";
 import { createTestSignal } from "../../utils/signalGenerator";
 
 const R3FCanvas = () => {
@@ -27,21 +28,27 @@ const R3FCanvas = () => {
   const [beamSpeed, setBeamSpeed] = useState(1000);
   const [cubeRotationSpeed, setCubeRotationSpeed] = useState(0);
 
-  const { mode, figureType, audioSource } = useControls({
+  const { mode, figureType, audioSource, textInput } = useControls({
     Mode: folder({
       mode: {
         options: { "Y–T": "yt", XY: "xy" },
         value: "xy",
       },
       figureType: {
-        options: { "Default": "default", "3D Cube": "cube" },
+        options: { "Default": "default", "3D Cube": "cube", "3D Text": "text" },
         value: "cube",
         label: "Figure",
+      },
+      textInput: {
+        value: "OSCILLOSCOPE",
+        label: "Text Input",
+        render: (get) => get("Mode.figureType") === "text",
       },
       audioSource: {
         options: { Microphone: "mic", "Upload File": "file" },
         value: "mic",
         label: "Audio Source",
+        render: (get) => get("Mode.figureType") === "default",
       },
     }),
   });
@@ -94,12 +101,20 @@ const R3FCanvas = () => {
     rotationSpeed: cubeRotationSpeed,
   });
 
-  // Speed Ramp Logic for Cube Mode
+  // Text Signal Generator
+  const { signalA: textA, signalB: textB } = useTextSignal({
+    active: figureType === "text",
+    text: textInput,
+    pointsCount: 2000,
+    rotationSpeed: cubeRotationSpeed,
+  });
+
+  // Speed Ramp Logic for Cube/Text Mode
   useEffect(() => {
-    if (figureType === "cube") {
+    if (figureType === "cube" || figureType === "text") {
       let frameId: number;
       const startTime = performance.now();
-      const duration = 10000; // 10 seconds ramp for smoother buildup
+      const duration = 30000; // 30 seconds ramp for smoother buildup
 
       const animate = () => {
         const elapsed = performance.now() - startTime;
@@ -110,8 +125,8 @@ const R3FCanvas = () => {
         const targetSpeed = 120000;
         const startSpeed = 1; // Start fast enough to see movement
 
-        // Quadratic ease-in: starts smooth, accelerates gradually
-        const ease = progress * progress;
+        // Quartic ease-in: starts very slow, accelerates steeply at the end
+        const ease = Math.pow(progress, 4);
         const current = startSpeed + (targetSpeed - startSpeed) * ease;
 
         setBeamSpeed(current);
@@ -174,6 +189,8 @@ const R3FCanvas = () => {
   const signalToDraw =
     figureType === "cube"
       ? cubeA
+      : figureType === "text"
+      ? textA
       : liveWindow.some((v) => v !== 0)
         ? liveWindow
         : fallback;
@@ -209,12 +226,16 @@ const R3FCanvas = () => {
   const xySignalA =
     figureType === "cube"
       ? cubeA
+      : figureType === "text"
+      ? textA
       : isStereoXY && leftXY.some((v) => v !== 0)
         ? leftXY
         : signalToDraw;
   const xySignalB =
     figureType === "cube"
       ? cubeB
+      : figureType === "text"
+      ? textB
       : isStereoXY && rightXY.some((v) => v !== 0)
         ? rightXY
         : secondarySignal;
@@ -255,7 +276,7 @@ const R3FCanvas = () => {
         <group
           position={[offsetX, offsetY, 0]}
           rotation={[0, 0, mode === "xy" ? rotateMod : 0]}
-          scale={mode === "xy" || figureType === "cube" ? scaleMod : 1}
+          scale={mode === "xy" || figureType === "cube" || figureType === "text" ? scaleMod : 1}
         >
           {mode === "yt" ? (
             <Waveform
@@ -278,12 +299,12 @@ const R3FCanvas = () => {
               height={6}
               scaleX={
                 1.2 *
-                (figureType === "cube" ? 1 : (isStereoXY ? xyScale : 1)) *
+                (figureType === "cube" || figureType === "text" ? 1 : (isStereoXY ? xyScale : 1)) *
                 beatFlash
               }
               scaleY={
                 1.2 *
-                (figureType === "cube" ? 1 : (isStereoXY ? xyScale : 1)) *
+                (figureType === "cube" || figureType === "text" ? 1 : (isStereoXY ? xyScale : 1)) *
                 beatFlash
               }
               color="#00ff00"
@@ -297,7 +318,7 @@ const R3FCanvas = () => {
           <group position={[offsetX, offsetY, 0]}>
             <WaveformTrail
               signal={signalToDraw}
-              signalB={mode === "xy" || figureType === "cube" ? xySignalB : undefined}
+              signalB={mode === "xy" || figureType === "cube" || figureType === "text" ? xySignalB : undefined}
               mode={mode === "yt" ? "yt" : "xy"}
               trailLength={trailLengthMod}
               width={8}
@@ -305,12 +326,12 @@ const R3FCanvas = () => {
               amplitudeScale={autoGain ? 1.5 * dynamicScale : manualGain}
               scaleX={
                 1.2 *
-                (figureType === "cube" ? 1 : (isStereoXY ? xyScale : 1)) *
+                (figureType === "cube" || figureType === "text" ? 1 : (isStereoXY ? xyScale : 1)) *
                 beatFlash
               }
               scaleY={
                 1.2 *
-                (figureType === "cube" ? 1 : (isStereoXY ? xyScale : 1)) *
+                (figureType === "cube" || figureType === "text" ? 1 : (isStereoXY ? xyScale : 1)) *
                 beatFlash
               }
               color="#00ff00"
