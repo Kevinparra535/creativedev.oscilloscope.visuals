@@ -1,94 +1,104 @@
-import { useMemo } from "react";
-import * as THREE from "three";
-
-/**
- * CONCEPTO FUNDAMENTAL DE OSCILOSCOPIO:
- *
- * Un osciloscopio dibuja cómo cambia una señal en el tiempo.
- *
- * - EJE X (horizontal): TIEMPO
- *   Cada punto en X representa un momento en el tiempo.
- *   En un array de samples, el índice i es el "tiempo discreto".
- *
- * - EJE Y (vertical): AMPLITUD
- *   Qué tan fuerte/alta es la señal en ese momento.
- *   Valores típicos: -1 a 1 (audio normalizado)
- *
- * MAPEO BÁSICO:
- *   X = (índice / total_samples) * ancho_pantalla
- *   Y = amplitud * escala_vertical
- */
+import { useMemo, useRef, useEffect } from 'react'
+import * as THREE from 'three'
 
 interface WaveformProps {
-  signal: Float32Array;
-  width?: number;
-  height?: number;
-  amplitudeScale?: number;
-  color?: string;
-  lineWidth?: number;
-  triggerIndex?: number;
-  showTrigger?: boolean;
+  signal: Float32Array
+  width: number
+  height: number
+  amplitudeScale: number
+  color?: string
+  lineWidth?: number
+  triggerIndex?: number
+  showTrigger?: boolean
 }
 
-const Waveform = ({
+export default function Waveform({
   signal,
-  width = 8,
-  height = 6,
-  amplitudeScale = 1,
-  color = "#00ff00",
-  lineWidth = 0.02,
+  width,
+  height,
+  amplitudeScale,
+  color = '#00ff00',
+  lineWidth = 2,
   triggerIndex = 0,
   showTrigger = false,
-}: WaveformProps) => {
-  // Crear geometría: una línea que conecta todos los puntos
-  const geometry = useMemo(() => {
-    const points: THREE.Vector3[] = [];
+}: WaveformProps) {
+  const geometryRef = useRef<THREE.BufferGeometry>(null)
 
-    // Recorrer todos los samples de la señal
+  const { positions, colors } = useMemo(() => {
+    const pos = new Float32Array(signal.length * 3)
+    const cols = new Float32Array(signal.length * 3)
+    const baseColor = new THREE.Color(color)
+    
+    // 1. Calculate Positions
     for (let i = 0; i < signal.length; i++) {
-      // X = tiempo (normalizado de 0 a 1, luego escalado al ancho)
-      // El índice i representa "cuándo" en la señal
-      const normalizedTime = i / (signal.length - 1); // 0.0 a 1.0
-      const x = normalizedTime * width - width / 2; // Centrar en 0
-
-      // Y = amplitud (valor de la señal en ese momento)
-      // signal[i] es típicamente -1 a 1 para audio
-      const amplitude = signal[i];
-      // Clip amplitude to stay within grid bounds (-1 to 1 max)
-      const clippedAmplitude = Math.max(-1, Math.min(1, amplitude * amplitudeScale));
-      const y = clippedAmplitude * (height / 4); // Escalar a pantalla
-
-      // Z = profundidad (0.01 para estar ligeramente al frente)
-      const z = 0.01;
-
-      points.push(new THREE.Vector3(x, y, z));
+      const x = (i / (signal.length - 1)) * width - width / 2
+      const clippedAmplitude = Math.max(-1, Math.min(1, signal[i] * amplitudeScale))
+      const y = clippedAmplitude * (height / 2)
+      
+      pos[i * 3] = x
+      pos[i * 3 + 1] = y
+      pos[i * 3 + 2] = 0
     }
 
-    // BufferGeometry desde puntos
-    return new THREE.BufferGeometry().setFromPoints(points);
-  }, [signal, width, height, amplitudeScale]);
+    // 2. Calculate Intensity (Beam Physics)
+    for (let i = 0; i < signal.length; i++) {
+      const base = i * 3
+      
+      // Calculate distance to next point
+      let dist = 0
+      if (i < signal.length - 1) {
+        const dx = pos[base + 3] - pos[base]
+        const dy = pos[base + 4] - pos[base + 1]
+        dist = Math.sqrt(dx * dx + dy * dy)
+      } else if (i > 0) {
+        const dx = pos[base] - pos[base - 3]
+        const dy = pos[base + 1] - pos[base - 2]
+        dist = Math.sqrt(dx * dx + dy * dy)
+      }
 
-  const triggerX = (triggerIndex / (signal.length - 1)) * width - width / 2;
+      // Physics: Slower beam = Brighter trace
+      // In Y-T mode, dx is constant, so intensity depends mainly on dy (slope)
+      const intensity = Math.min(1.0, 0.05 / (dist + 0.001)) + 0.2
+
+      cols[base] = baseColor.r * intensity
+      cols[base + 1] = baseColor.g * intensity
+      cols[base + 2] = baseColor.b * intensity
+    }
+
+    return { positions: pos, colors: cols }
+  }, [signal, width, height, amplitudeScale, color])
+
+  useEffect(() => {
+    if (geometryRef.current) {
+      geometryRef.current.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      geometryRef.current.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+    }
+  }, [positions, colors])
 
   return (
     <group>
-      {/* @ts-expect-error - R3F primitive */}
-      <line geometry={geometry}>
+      <line>
+        <bufferGeometry ref={geometryRef} />
         <lineBasicMaterial
-          color={color}
+          vertexColors={true}
           linewidth={lineWidth}
           transparent={true}
           opacity={0.9}
+          blending={THREE.AdditiveBlending}
+          depthTest={false}
         />
       </line>
-      {showTrigger && triggerIndex >= 0 && triggerIndex < signal.length && (
-        <mesh position={[triggerX, 0, 0]}>
-          <boxGeometry args={[0.02, height, 0.001]} />
-          <meshBasicMaterial color="#ff0066" transparent opacity={0.45} />
+      
+      {showTrigger && (
+        <mesh position={[
+          (triggerIndex / (signal.length - 1)) * width - width / 2,
+          Math.max(-height/2, Math.min(height/2, signal[triggerIndex] * amplitudeScale * (height / 2))),
+          0.1
+        ]}>
+          <sphereGeometry args={[0.05, 8, 8]} />
+          <meshBasicMaterial color="#ff0000" />
         </mesh>
       )}
     </group>
-  );
-};
-
-export default Waveform;
+  )
+}

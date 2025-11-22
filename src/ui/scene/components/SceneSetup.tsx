@@ -1,4 +1,4 @@
-import { OrbitControls } from '@react-three/drei'
+import { CameraControls } from '@react-three/drei'
 
 export function SceneSetup() {
   return (
@@ -12,12 +12,24 @@ export function SceneSetup() {
       {/* Directional light for depth */}
       <directionalLight position={[5, 5, 5]} intensity={0.4} />
       
-      {/* Camera controls for development/debugging */}
-      <OrbitControls
-        enablePan={true}
-        enableZoom={true}
-        enableRotate={true}
-        target={[0, 0, 0]}
+      {/* Camera controls: Dolly only (Zoom) */}
+      <CameraControls
+        minDistance={5}
+        maxDistance={20}
+        azimuthRotateSpeed={0}
+        polarRotateSpeed={0}
+        truckSpeed={0}
+        mouseButtons={{
+          left: 0, // No rotation
+          middle: 0, // No pan
+          right: 0, // No truck
+          wheel: 8, // Dolly (Zoom)
+        }}
+        touches={{
+          one: 0,
+          two: 0,
+          three: 0
+        }}
       />
     </>
   )
