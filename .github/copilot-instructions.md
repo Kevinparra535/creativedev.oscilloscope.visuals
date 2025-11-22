@@ -25,7 +25,7 @@ These instructions capture current, observable patterns in this React + TypeScri
 
 ## Adding Code
 - New UI components: create `.tsx` in `src/` or a subfolder; functional components with hooks; export defaults or named exports consistently.
-- Styling: project uses **`styled-components`** for component styles. Colocate styled definitions in the same file as the component (e.g., `const CanvasContainer = styled.div\`...\``). Avoid global CSS files.
+- Styling: project uses **`styled-components`** with a light design system. DO NOT inline styled definitions inside feature components; instead place shared styled primitives & tokens under `src/ui/styled/` and `src/ui/theme.ts`. Components import these primitives (e.g., `CanvasContainer`, `ToggleBar`). Avoid ad-hoc style duplication.
 - Assets: import via relative path; for new static assets place under `src/assets/` (consistent with existing `react.svg`). Use Vite's asset handling (no manual bundler config needed).
 - Environment variables: use `import.meta.env.VITE_*` naming; add to a `.env` file if introduced (not present yet). Document additions in README if created.
 
@@ -35,22 +35,52 @@ These instructions capture current, observable patterns in this React + TypeScri
 
 ## Oscilloscope Visuals — Domain Notes
 - Goal: render visuals faithful to a CRT oscilloscope (timebase, grid, intensity/persistence, XY/Lissajous mode) using **React Three Fiber** for 3D representation.
+- **Core Concept**: Oscilloscope as a signal viewer (not a generic visual). Y–T mode: X = time (sample index), Y = amplitude. XY mode: X = signal A amplitude, Y = signal B amplitude (Lissajous / parametric figures). This viewer will be later hacked as an artistic canvas (persistence, multi-layer, modulation).
 - Rendering stack: React Three Fiber (`@react-three/fiber`) + Three.js for 3D oscilloscope; `@react-three/drei` for helpers like `OrbitControls`.
 - Component structure:
   - `src/ui/scene/R3FCanvas.tsx`: main Canvas container (fullscreen, dark background, camera config).
   - `src/ui/scene/components/CRTScreen.tsx`: CRT screen mesh with phosphor-like material (`meshStandardMaterial` with emissive green).
   - `src/ui/scene/components/GridOverlay.tsx`: grid lines for time/voltage divisions using `lineSegments` and `BufferGeometry`.
+  - `src/ui/scene/components/Waveform.tsx`: **core component** mapping signal array to line geometry (Y–T mode).
+  - `src/ui/scene/components/XYPlot.tsx` (to add): XY mode line/point plot from two equal-length signals (Lissajous figures / parametric drawing).
   - `src/ui/scene/components/SceneSetup.tsx`: scene lighting (`ambientLight`, `pointLight`, `directionalLight`) + `OrbitControls` for camera manipulation.
-- Data source: start with simulated `Float32Array` signals (sine, square, noise) via a small generator util. When ready, integrate Web Audio API (`AudioContext` + `AnalyserNode`) behind a thin hook like `useAudioSamples()`.
-- Props & scaling: expose `timePerDiv`, `voltsPerDiv`, `samplesPerSec`, `triggerLevel`, `mode: 'YT' | 'XY'`. Map samples → 3D vertices/positions; avoid global state.
-- Triggering: implement simple rising-edge software trigger first; draw a stable frame per animation tick. Defer advanced triggers until needed.
-- Persistence: emulate CRT persistence using shader materials with alpha decay or layered render targets; make persistence configurable.
+- Signal mapping (Y–T): `x = (i/(N-1)) * width - width/2`, `y = signal[i] * (height/2) * amplitudeScale`.
+- Signal mapping (XY): `x = signalA[i] * (width/2) * scaleX`, `y = signalB[i] * (height/2) * scaleY`.
+- Data source: start with simulated `Float32Array` signals (sine, square, noise) via `utils/signalGenerator.ts`. When ready, integrate Web Audio API (`AudioContext` + `AnalyserNode`) behind a thin hook like `useAudioSamples()`.
+- Props & scaling: expose `amplitudeScale` for Y-axis scaling. Map samples → 3D vertices; avoid global state.
+- Triggering: Rising edge alignment for stability (Y–T). XY stability emerges from relative phase between A/B; optional phase controls or delay lines later.
+- Persistence: Future artistic layer (render-to-texture decay, additive blending). Keep current geometry simple until mode architecture solid.
 - Performance: minimize React re-renders; use `useRef` for mesh references; memoize geometries/materials with `useMemo`; cleanup Three.js resources in `useEffect` return.
 - Styling: grid drawn with `lineSegments` geometry; "phosphor green" (`#00ff00`) default theme; component containers use styled-components.
 - Testing/debug: `OrbitControls` enabled for camera manipulation during development. Add UI toggle to freeze animation and seed for deterministic waveforms later.
+- **FPS vs Sample Rate**: ~60 FPS vs 44.1kHz audio. Each frame selects a window (e.g. 1024 samples). Rolling vs Windowed approach chosen: POC uses Windowed for clarity; Rolling can be added for historical trail.
+
+## Modes Architecture
+- Local `mode` state in `R3FCanvas` (`'yt' | 'xy'`).
+- Shared window length for both signals; second signal can be synthetic (phase-shift sine) when mic provides only one channel.
+- Components render conditionally: `mode === 'yt' ? <Waveform .../> : <XYPlot .../>`.
+- Future: allow dynamic source routing (mic left/right, synthesized pairs, external data). Keep abstractions thin: hooks produce `Float32Array` windows.
+
+## Artistic Canvas Vision
+- Base viewer = deterministic signal plot.
+- Hack layers: persistence trail, glow, modulation of intensity by derivative, multi-signal overlays, parametric gating.
+- Keep geometry memory stable (reuse buffers) and apply effects via post-processing or custom shaders later.
+
+## Implementation Guidelines for New XYPlot
+- Input props: `signalA`, `signalB`, `width`, `height`, `scaleX`, `scaleY`, `color`, `lineWidth`.
+- Length mismatch: clamp to `min(signalA.length, signalB.length)`.
+- Use `BufferGeometry` with preallocated `Float32Array` updated in `useEffect`/`useMemo`.
+- Clean up geometry/material via React cleanup return.
+- Support switching mode without remounting entire Canvas (only conditional plot components).
+
+## Trigger & Stability Notes
+- Y–T: Optional rising-edge scan to anchor left edge of window.
+- XY: For classic Lissajous, use frequency ratios (e.g. 440Hz vs 660Hz) or phase offsets. Provide simple phase param for synthetic second source.
+
 
 ## Patterns & Guardrails
 - State: local only; before adding global state (Redux, Zustand, Context), confirm necessity.
+- Styling separation: if a component needs new UI primitives, add them to `src/ui/styled/ScopeControls.tsx` or a new appropriately named file—do not embed style declarations next to logic.
 - Routing: none; if introducing, isolate in `src/routes/` and update `main.tsx` root composition.
 - Testing: absent. Ask before adding (e.g., Vitest + React Testing Library). Do not assume.
 - Accessibility: not enforced yet—if adding ARIA or semantic fixes, keep changes incremental.
