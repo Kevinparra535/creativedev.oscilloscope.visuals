@@ -1,8 +1,9 @@
 import { Canvas } from "@react-three/fiber";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Leva, useControls, folder } from "leva";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import { CanvasContainer } from "../styles/ScopeControls.styled";
+import AudioFileUpload from "../components/AudioFileUpload";
 import { CRTScreen } from "./components/CRTScreen";
 import { GridOverlay } from "./components/GridOverlay";
 import { SceneSetup } from "./components/SceneSetup";
@@ -12,11 +13,15 @@ import WaveformTrail from "./components/WaveformTrail";
 import useAudioWindow from "../../hooks/useAudioWindow";
 import useStereoAudioWindow from "../../hooks/useStereoAudioWindow";
 import useAudioFeatures from "../../hooks/useAudioFeatures";
+import useAudioInput from "../../hooks/useAudioInput";
 import { createTestSignal } from "../../utils/signalGenerator";
 
 const R3FCanvas = () => {
+  const [uploadedFile, setUploadedFile] = useState<string>("");
+
   const {
     mode,
+    audioSource,
     msPerDiv,
     autoGain,
     manualGain,
@@ -35,6 +40,11 @@ const R3FCanvas = () => {
   } = useControls({
     Mode: folder({
       mode: { options: { "Y–T": "yt", XY: "xy" }, value: "yt" },
+      audioSource: {
+        options: { Microphone: "mic", "Upload File": "file", Oscillator: "osc" },
+        value: "mic",
+        label: "Audio Source",
+      },
     }),
     Timebase: folder({
       msPerDiv: { value: 10, min: 1, max: 50, step: 1, label: "ms/div" },
@@ -66,10 +76,21 @@ const R3FCanvas = () => {
     [msPerDiv]
   );
 
+  // Centralized audio input management
+  const { loadAudioFile } = useAudioInput({
+    source: audioSource as "mic" | "file" | "osc",
+    frequency: 440,
+  });
+
+  const handleFileUpload = (file: File) => {
+    loadAudioFile(file);
+    setUploadedFile(file.name);
+  };
+
   // Audio features for visual mapping
   const { rmsGlobal, bands, beat } = useAudioFeatures({
     fftSize: 2048,
-    source: "mic",
+    source: audioSource === "file" ? "mic" : (audioSource as "mic" | "osc"),
     frequency: 440,
     updateIntervalMs: 33,
     smoothingAlpha: 0.15,
@@ -91,7 +112,7 @@ const R3FCanvas = () => {
     scale: dynamicScale,
     triggerIndex,
   } = useAudioWindow({
-    source: "mic",
+    source: audioSource === "file" ? "mic" : (audioSource as "mic" | "osc"),
     windowSize: effectiveWindowSize,
     fftSize: 2048,
     frequency: 440,
@@ -148,6 +169,11 @@ const R3FCanvas = () => {
 
   return (
     <CanvasContainer>
+      <AudioFileUpload
+        onFileSelect={handleFileUpload}
+        currentFile={uploadedFile}
+        show={audioSource === "file"}
+      />
       <Leva collapsed />
       <Canvas
         camera={{ position: [0, 0, 12], fov: 50 }}
