@@ -54,6 +54,35 @@ const R3FCanvas = () => {
     }),
   });
 
+  // Calculate dynamic max clones based on text length
+  const maxClonesLimit = useMemo(() => {
+    if (figureType === "cube") return 8;
+    // Use the actual text length that will be rendered (substring 0, 12)
+    const effectiveText = textInput.substring(0, 12);
+    const len = effectiveText.length || 1;
+    // Heuristic: 12 chars -> 5 clones (60/12). 
+    return Math.max(1, Math.min(8, Math.floor(60 / len)));
+  }, [figureType, textInput]);
+
+  const { enableFormation, formationDelay, targetClones } = useControls(
+    "Animation",
+    {
+      enableFormation: { value: true, label: "Enable Formation" },
+      formationDelay: { value: 40, min: 0, max: 120, step: 1, label: "Start Delay (s)" },
+      targetClones: {
+        value: 5,
+        min: 1,
+        max: maxClonesLimit,
+        step: 1,
+        label: "Target Count",
+      },
+    },
+    [maxClonesLimit]
+  );
+
+  // Ensure we don't exceed the limit even if the slider value is stale
+  const effectiveTargetClones = Math.min(targetClones, maxClonesLimit);
+
   // Default values for removed controls
   const msPerDiv = 10;
   const autoGain = true;
@@ -122,19 +151,24 @@ const R3FCanvas = () => {
       // Reset clone state on mode change (deferred to avoid sync update warning)
       const resetTimer = setTimeout(() => setCloneCount(1), 0);
       
-      // Timer for multi-element appearance (Pentagon formation)
-      // Starts at 40s, adds one every 2s until 5
+      // Timer for multi-element appearance
       const formationTimers: NodeJS.Timeout[] = [];
       
-      const startFormation = setTimeout(() => {
-        let count = 1;
-        const interval = setInterval(() => {
-          count++;
-          setCloneCount(count);
-          if (count >= 5) clearInterval(interval);
-        }, 2000); // Add a new clone every 2 seconds
-        formationTimers.push(setTimeout(() => clearInterval(interval), 12000)); // Safety clear
-      }, 40000);
+      if (enableFormation) {
+        const startFormation = setTimeout(() => {
+          let count = 1;
+          const interval = setInterval(() => {
+            if (count < effectiveTargetClones) {
+              count++;
+              setCloneCount(count);
+            } else {
+              clearInterval(interval);
+            }
+          }, 2000); // Add a new clone every 2 seconds
+          formationTimers.push(setTimeout(() => clearInterval(interval), (effectiveTargetClones * 2000) + 5000)); // Safety clear
+        }, formationDelay * 1000);
+        formationTimers.push(startFormation);
+      }
 
       const animate = () => {
         const elapsed = performance.now() - startTime;
@@ -167,7 +201,6 @@ const R3FCanvas = () => {
 
       return () => {
         cancelAnimationFrame(frameId);
-        clearTimeout(startFormation);
         clearTimeout(resetTimer);
         formationTimers.forEach(t => clearTimeout(t));
       };
@@ -180,7 +213,7 @@ const R3FCanvas = () => {
       }, 0);
       return () => clearTimeout(timeoutId);
     }
-  }, [figureType]);
+  }, [figureType, enableFormation, formationDelay, effectiveTargetClones]);
 
   // Read-only monitors
   // useControls(

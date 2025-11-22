@@ -41,6 +41,10 @@ export default function useTextSignal({
 
   const requestRef = useRef<number | undefined>(undefined);
   const speedRef = useRef(rotationSpeed);
+  
+  // Animation refs for smooth transitions
+  const offsetsRef = useRef<{x: number, y: number}[]>([]);
+  const scaleRef = useRef(0.4);
 
   useEffect(() => {
     speedRef.current = rotationSpeed;
@@ -65,10 +69,10 @@ export default function useTextSignal({
 
     const animate = () => {
       // Fixed orientation for "WordArt" look without spinning
-      // Slight tilt to show depth
-      const tiltX = -0.1; 
-      const tiltY = 0.3; 
-      const tiltZ = 0.0;
+      // Flat orientation for clean oscilloscope look
+      const tiltX = 0; 
+      const tiltY = 0; 
+      const tiltZ = 0;
 
       const euler = new THREE.Euler(tiltX, tiltY, tiltZ);
       const quaternion = new THREE.Quaternion().setFromEuler(euler);
@@ -124,20 +128,37 @@ export default function useTextSignal({
       const passes = Math.max(1, cloneCount);
       const pointsPerPass = Math.floor(pointsCount / passes);
 
+      // Initialize new offsets at center (0,0) if needed
+      while (offsetsRef.current.length < passes) {
+         offsetsRef.current.push({ x: 0, y: 0 });
+      }
+
+      // Smooth Scale Transition
+      // Adjusted for Orthographic projection (previously divided by dist=2.5)
+      const targetScale = passes > 1 ? 0.08 : 0.16;
+      scaleRef.current += (targetScale - scaleRef.current) * 0.05;
+      const currentScale = scaleRef.current;
+
       let bufferIdx = 0;
 
       for (let pass = 0; pass < passes; pass++) {
-        // Calculate offset for circular formation
-        let xOffset = 0;
-        let yOffset = 0;
+        // Calculate Target Offset
+        let targetX = 0;
+        let targetY = 0;
         
         if (passes > 1) {
           const radius = 1.6; // Larger radius for text so they don't overlap
-          // Distribute evenly in a circle
           const angle = (pass / passes) * Math.PI * 2 + Math.PI / 2;
-          xOffset = Math.cos(angle) * radius;
-          yOffset = Math.sin(angle) * radius;
+          targetX = Math.cos(angle) * radius;
+          targetY = Math.sin(angle) * radius;
         }
+
+        // Smooth Position Transition (Lerp)
+        offsetsRef.current[pass].x += (targetX - offsetsRef.current[pass].x) * 0.05;
+        offsetsRef.current[pass].y += (targetY - offsetsRef.current[pass].y) * 0.05;
+        
+        const xOffset = offsetsRef.current[pass].x;
+        const yOffset = offsetsRef.current[pass].y;
 
         for (let i = 0; i < pointsPerPass; i++) {
           // Map buffer index to source point index
@@ -173,12 +194,10 @@ export default function useTextSignal({
           v.x += xOffset;
           v.y += yOffset;
 
-          // Perspective Projection
-          const dist = 2.5; 
-          const scale = passes > 1 ? 0.2 : 0.4; // Reduced scale to fit grid
-          
-          const px = (v.x / (v.z + dist)) * scale;
-          const py = (v.y / (v.z + dist)) * scale;
+          // Orthographic Projection (Flat)
+          // Just scale x and y, ignore z for projection
+          const px = v.x * currentScale;
+          const py = v.y * currentScale;
 
           bufferA[bufferIdx] = px;
           bufferB[bufferIdx] = py;

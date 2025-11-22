@@ -24,6 +24,10 @@ export default function useCubeSignal({
   const rotationRef = useRef(new THREE.Euler(0, 0, 0));
   const requestRef = useRef<number | undefined>(undefined);
   const speedRef = useRef(rotationSpeed);
+  
+  // Animation refs for smooth transitions
+  const offsetsRef = useRef<{x: number, y: number}[]>([]);
+  const scaleRef = useRef(1.2);
 
   useEffect(() => {
     speedRef.current = rotationSpeed;
@@ -54,22 +58,36 @@ export default function useCubeSignal({
       const pointsPerPass = Math.floor(pointsCount / passes);
       const pointsPerSegment = Math.floor(pointsPerPass / totalSegments);
 
+      // Initialize new offsets at center (0,0) if needed
+      while (offsetsRef.current.length < passes) {
+         offsetsRef.current.push({ x: 0, y: 0 });
+      }
+
+      // Smooth Scale Transition
+      const targetScale = passes > 1 ? 0.45 : 1.2;
+      scaleRef.current += (targetScale - scaleRef.current) * 0.05;
+      const currentScale = scaleRef.current;
+
       let bufferIdx = 0;
 
       for (let pass = 0; pass < passes; pass++) {
-        // Calculate offset for circular formation
-        let xOffset = 0;
-        let yOffset = 0;
+        // Calculate Target Offset
+        let targetX = 0;
+        let targetY = 0;
         
         if (passes > 1) {
           const radius = 1.3;
-          // Distribute evenly in a circle
-          // Start angle -PI/2 to put the first one at top (or bottom?)
-          // Let's align so pass 0 is at top if 2, or standard polygon
           const angle = (pass / passes) * Math.PI * 2 + Math.PI / 2;
-          xOffset = Math.cos(angle) * radius;
-          yOffset = Math.sin(angle) * radius;
+          targetX = Math.cos(angle) * radius;
+          targetY = Math.sin(angle) * radius;
         }
+
+        // Smooth Position Transition (Lerp)
+        offsetsRef.current[pass].x += (targetX - offsetsRef.current[pass].x) * 0.05;
+        offsetsRef.current[pass].y += (targetY - offsetsRef.current[pass].y) * 0.05;
+        
+        const xOffset = offsetsRef.current[pass].x;
+        const yOffset = offsetsRef.current[pass].y;
 
         for (let i = 0; i < totalSegments; i++) {
           const idx1 = path[i];
@@ -87,14 +105,11 @@ export default function useCubeSignal({
           // x' = x / (z + dist)
           // Closer distance = stronger perspective distortion
           const dist = 1.8; 
-          // Scale up by 1.2 to fill the screen better
-          // Reduce scale in multi-mode to fit grid
-          const scale = passes > 1 ? 0.45 : 1.2;
           
-          const p1x = (v1.x / (v1.z + dist)) * scale;
-          const p1y = (v1.y / (v1.z + dist)) * scale;
-          const p2x = (v2.x / (v2.z + dist)) * scale;
-          const p2y = (v2.y / (v2.z + dist)) * scale;
+          const p1x = (v1.x / (v1.z + dist)) * currentScale;
+          const p1y = (v1.y / (v1.z + dist)) * currentScale;
+          const p2x = (v2.x / (v2.z + dist)) * currentScale;
+          const p2y = (v2.y / (v2.z + dist)) * currentScale;
 
           for (let j = 0; j < pointsPerSegment; j++) {
             if (bufferIdx >= pointsCount) break;
