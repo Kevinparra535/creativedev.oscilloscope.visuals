@@ -27,11 +27,16 @@ const R3FCanvas = () => {
   const [beamSpeed, setBeamSpeed] = useState(1000);
   const [cubeRotationSpeed, setCubeRotationSpeed] = useState(0);
 
-  const { mode, audioSource } = useControls({
+  const { mode, figureType, audioSource } = useControls({
     Mode: folder({
       mode: {
-        options: { "Y–T": "yt", XY: "xy", "3D Cube": "cube" },
+        options: { "Y–T": "yt", XY: "xy" },
+        value: "xy",
+      },
+      figureType: {
+        options: { "Default": "default", "3D Cube": "cube" },
         value: "cube",
+        label: "Figure",
       },
       audioSource: {
         options: { Microphone: "mic", "Upload File": "file" },
@@ -75,7 +80,7 @@ const R3FCanvas = () => {
   // Audio features for visual mapping
   const { rmsGlobal, bands, beat } = useAudioFeatures({
     fftSize: 2048,
-    source: "mic",
+    source: "mic", // Features always come from mic/shared context for now
     updateIntervalMs: 33,
     smoothingAlpha: 0.15,
     beatThreshold: 1.4,
@@ -84,14 +89,14 @@ const R3FCanvas = () => {
 
   // Cube Signal Generator
   const { signalA: cubeA, signalB: cubeB } = useCubeSignal({
-    active: mode === "cube",
+    active: figureType === "cube",
     pointsCount: 2000,
     rotationSpeed: cubeRotationSpeed,
   });
 
   // Speed Ramp Logic for Cube Mode
   useEffect(() => {
-    if (mode === "cube") {
+    if (figureType === "cube") {
       let frameId: number;
       const startTime = performance.now();
       const duration = 10000; // 10 seconds ramp for smoother buildup
@@ -134,7 +139,7 @@ const R3FCanvas = () => {
       }, 0);
       return () => clearTimeout(timeoutId);
     }
-  }, [mode]);
+  }, [figureType]);
 
   // Read-only monitors
   // useControls(
@@ -166,7 +171,12 @@ const R3FCanvas = () => {
   });
 
   const fallback = useMemo(() => createTestSignal("sine", 440, 0.1), []);
-  const signalToDraw = liveWindow.some((v) => v !== 0) ? liveWindow : fallback;
+  const signalToDraw =
+    figureType === "cube"
+      ? cubeA
+      : liveWindow.some((v) => v !== 0)
+        ? liveWindow
+        : fallback;
 
   const secondarySignal = useMemo(() => {
     const ratioFreq = 660;
@@ -197,13 +207,13 @@ const R3FCanvas = () => {
   });
 
   const xySignalA =
-    mode === "cube"
+    figureType === "cube"
       ? cubeA
       : isStereoXY && leftXY.some((v) => v !== 0)
         ? leftXY
         : signalToDraw;
   const xySignalB =
-    mode === "cube"
+    figureType === "cube"
       ? cubeB
       : isStereoXY && rightXY.some((v) => v !== 0)
         ? rightXY
@@ -223,7 +233,7 @@ const R3FCanvas = () => {
       <AudioFileUpload
         onFileSelect={handleFileUpload}
         currentFile={uploadedFile}
-        show={audioSource === "file"}
+        show={figureType === "default" && audioSource === "file"}
       />
       <Leva collapsed />
       <Canvas
@@ -245,7 +255,7 @@ const R3FCanvas = () => {
         <group
           position={[offsetX, offsetY, 0]}
           rotation={[0, 0, mode === "xy" ? rotateMod : 0]}
-          scale={mode === "xy" || mode === "cube" ? scaleMod : 1}
+          scale={mode === "xy" || figureType === "cube" ? scaleMod : 1}
         >
           {mode === "yt" ? (
             <Waveform
@@ -268,20 +278,12 @@ const R3FCanvas = () => {
               height={6}
               scaleX={
                 1.2 *
-                (isStereoXY || mode === "cube"
-                  ? mode === "cube"
-                    ? 1
-                    : xyScale
-                  : 1) *
+                (figureType === "cube" ? 1 : (isStereoXY ? xyScale : 1)) *
                 beatFlash
               }
               scaleY={
                 1.2 *
-                (isStereoXY || mode === "cube"
-                  ? mode === "cube"
-                    ? 1
-                    : xyScale
-                  : 1) *
+                (figureType === "cube" ? 1 : (isStereoXY ? xyScale : 1)) *
                 beatFlash
               }
               color="#00ff00"
@@ -295,7 +297,7 @@ const R3FCanvas = () => {
           <group position={[offsetX, offsetY, 0]}>
             <WaveformTrail
               signal={signalToDraw}
-              signalB={mode === "xy" || mode === "cube" ? xySignalB : undefined}
+              signalB={mode === "xy" || figureType === "cube" ? xySignalB : undefined}
               mode={mode === "yt" ? "yt" : "xy"}
               trailLength={trailLengthMod}
               width={8}
@@ -303,20 +305,12 @@ const R3FCanvas = () => {
               amplitudeScale={autoGain ? 1.5 * dynamicScale : manualGain}
               scaleX={
                 1.2 *
-                (isStereoXY || mode === "cube"
-                  ? mode === "cube"
-                    ? 1
-                    : xyScale
-                  : 1) *
+                (figureType === "cube" ? 1 : (isStereoXY ? xyScale : 1)) *
                 beatFlash
               }
               scaleY={
                 1.2 *
-                (isStereoXY || mode === "cube"
-                  ? mode === "cube"
-                    ? 1
-                    : xyScale
-                  : 1) *
+                (figureType === "cube" ? 1 : (isStereoXY ? xyScale : 1)) *
                 beatFlash
               }
               color="#00ff00"
