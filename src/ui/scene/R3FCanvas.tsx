@@ -1,7 +1,12 @@
 import { Canvas } from "@react-three/fiber";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Leva, useControls, folder } from "leva";
-import { EffectComposer, Bloom, Vignette, Noise } from "@react-three/postprocessing";
+import {
+  EffectComposer,
+  Bloom,
+  Vignette,
+  Noise,
+} from "@react-three/postprocessing";
 import { CanvasContainer } from "../styles/ScopeControls.styled";
 import AudioFileUpload from "../components/AudioFileUpload";
 import { CRTScreen } from "./components/CRTScreen.tsx";
@@ -14,90 +19,43 @@ import useAudioWindow from "../../hooks/useAudioWindow";
 import useStereoAudioWindow from "../../hooks/useStereoAudioWindow";
 import useAudioFeatures from "../../hooks/useAudioFeatures";
 import useAudioInput from "../../hooks/useAudioInput";
+import useCubeSignal from "../../hooks/useCubeSignal";
 import { createTestSignal } from "../../utils/signalGenerator";
 
 const R3FCanvas = () => {
   const [uploadedFile, setUploadedFile] = useState<string>("");
+  const [beamSpeed, setBeamSpeed] = useState(1000);
+  const [cubeRotationSpeed, setCubeRotationSpeed] = useState(0);
 
-  const {
-    mode,
-    audioSource,
-    msPerDiv,
-    autoGain,
-    manualGain,
-    showTrigger,
-    showPersistence,
-    trailLength,
-    bloomIntensity,
-    bloomThreshold,
-    scaleGain,
-    rotateGain,
-    thicknessGain,
-    trailBoost,
-    offsetX,
-    offsetY,
-  } = useControls({
+  const { mode, audioSource } = useControls({
     Mode: folder({
-      mode: { options: { "Y–T": "yt", XY: "xy" }, value: "xy" },
+      mode: {
+        options: { "Y–T": "yt", XY: "xy", "3D Cube": "cube" },
+        value: "cube",
+      },
       audioSource: {
         options: { Microphone: "mic", "Upload File": "file" },
         value: "mic",
         label: "Audio Source",
       },
     }),
-    Timebase: folder({
-      msPerDiv: { value: 10, min: 1, max: 50, step: 1, label: "ms/div" },
-    }),
-    Gain: folder({
-      autoGain: { value: true, label: "Auto" },
-      manualGain: { value: 1.5, min: 0.1, max: 5, step: 0.1, label: "Manual" },
-    }),
-    Visual: folder({
-      showTrigger: { value: true, label: "Trigger Marker" },
-      showPersistence: { value: false, label: "Persistence" },
-      trailLength: {
-        value: 20,
-        min: 0,
-        max: 60,
-        step: 1,
-        label: "Trail Length",
-      },
-      bloomIntensity: {
-        value: 4.0,
-        min: 0,
-        max: 10,
-        step: 0.1,
-        label: "Bloom Intensity",
-      },
-      bloomThreshold: {
-        value: 0.05,
-        min: 0,
-        max: 1,
-        step: 0.01,
-        label: "Bloom Threshold",
-      },
-    }),
-    Mapping: folder({
-      scaleGain: { value: 0.5, min: 0, max: 2, step: 0.1, label: "RMS→Scale" },
-      rotateGain: {
-        value: 0.3,
-        min: 0,
-        max: 2,
-        step: 0.1,
-        label: "High→Rotate",
-      },
-      thicknessGain: {
-        value: 0.5,
-        min: 0,
-        max: 2,
-        step: 0.1,
-        label: "Mid→Thickness",
-      },
-      trailBoost: { value: 10, min: 0, max: 30, step: 1, label: "Low→Trail" },
-      offsetX: { value: 0, min: -2, max: 2, step: 0.1, label: "Center X" },
-      offsetY: { value: 0, min: -2, max: 2, step: 0.1, label: "Center Y" },
-    }),
   });
+
+  // Default values for removed controls
+  const msPerDiv = 10;
+  const autoGain = true;
+  const manualGain = 1.5;
+  const showTrigger = true;
+  const showPersistence = false;
+  const trailLength = 20;
+  const bloomIntensity = 4.0;
+  const bloomThreshold = 0.05;
+  const scaleGain = 0.5;
+  const rotateGain = 0.3;
+  const thicknessGain = 0.5;
+  const trailBoost = 10;
+  const offsetX = 0;
+  const offsetY = 0;
   const divisionsX = 8;
   const effectiveWindowSize = useMemo(
     () => Math.max(128, Math.round((msPerDiv * divisionsX * 44100) / 1000)),
@@ -124,18 +82,72 @@ const R3FCanvas = () => {
     beatCooldownMs: 120,
   });
 
+  // Cube Signal Generator
+  const { signalA: cubeA, signalB: cubeB } = useCubeSignal({
+    active: mode === "cube",
+    pointsCount: 2000,
+    rotationSpeed: cubeRotationSpeed,
+  });
+
+  // Speed Ramp Logic for Cube Mode
+  useEffect(() => {
+    if (mode === "cube") {
+      let frameId: number;
+      const startTime = performance.now();
+      const duration = 10000; // 10 seconds ramp for smoother buildup
+
+      const animate = () => {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Target speed: Traverse full buffer (2000 points) every frame (1/60s)
+        // 2000 * 60 = 120,000 points/sec
+        const targetSpeed = 120000;
+        const startSpeed = 1; // Start fast enough to see movement
+
+        // Quadratic ease-in: starts smooth, accelerates gradually
+        const ease = progress * progress;
+        const current = startSpeed + (targetSpeed - startSpeed) * ease;
+
+        setBeamSpeed(current);
+
+        // Ramp rotation speed: Start static (0) and ramp to 1
+        // Delay rotation slightly to let the shape form first?
+        // Let's ramp it alongside beam speed but maybe slower curve
+        const rotationEase = Math.pow(progress, 3); // Cubic ease for rotation (starts later/slower)
+        setCubeRotationSpeed(rotationEase);
+
+        if (progress < 1) {
+          frameId = requestAnimationFrame(animate);
+        }
+      };
+
+      // Start animation loop
+      frameId = requestAnimationFrame(animate);
+
+      return () => cancelAnimationFrame(frameId);
+    } else {
+      // Defer state update to avoid synchronous effect warning
+      const timeoutId = setTimeout(() => {
+        setBeamSpeed(1000);
+        setCubeRotationSpeed(0);
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [mode]);
+
   // Read-only monitors
-  useControls(
-    "Monitors",
-    {
-      rmsGlobal: { value: rmsGlobal, editable: false },
-      lowBand: { value: bands.low.smoothed, editable: false },
-      midBand: { value: bands.mid.smoothed, editable: false },
-      highBand: { value: bands.high.smoothed, editable: false },
-      beatConf: { value: beat.confidence, editable: false },
-    },
-    [rmsGlobal, bands, beat]
-  );
+  // useControls(
+  //   "Monitors",
+  //   {
+  //     rmsGlobal: { value: rmsGlobal, editable: false },
+  //     lowBand: { value: bands.low.smoothed, editable: false },
+  //     midBand: { value: bands.mid.smoothed, editable: false },
+  //     highBand: { value: bands.high.smoothed, editable: false },
+  //     beatConf: { value: beat.confidence, editable: false },
+  //   },
+  //   [rmsGlobal, bands, beat]
+  // );
 
   const {
     window: liveWindow,
@@ -185,9 +197,17 @@ const R3FCanvas = () => {
   });
 
   const xySignalA =
-    isStereoXY && leftXY.some((v) => v !== 0) ? leftXY : signalToDraw;
+    mode === "cube"
+      ? cubeA
+      : isStereoXY && leftXY.some((v) => v !== 0)
+        ? leftXY
+        : signalToDraw;
   const xySignalB =
-    isStereoXY && rightXY.some((v) => v !== 0) ? rightXY : secondarySignal;
+    mode === "cube"
+      ? cubeB
+      : isStereoXY && rightXY.some((v) => v !== 0)
+        ? rightXY
+        : secondarySignal;
 
   // Feature mapping
   const scaleMod = 1 + rmsGlobal * scaleGain;
@@ -225,7 +245,7 @@ const R3FCanvas = () => {
         <group
           position={[offsetX, offsetY, 0]}
           rotation={[0, 0, mode === "xy" ? rotateMod : 0]}
-          scale={mode === "xy" ? scaleMod : 1}
+          scale={mode === "xy" || mode === "cube" ? scaleMod : 1}
         >
           {mode === "yt" ? (
             <Waveform
@@ -246,9 +266,27 @@ const R3FCanvas = () => {
               signalB={xySignalB}
               width={8}
               height={6}
-              scaleX={1.2 * (isStereoXY ? xyScale : 1) * beatFlash}
-              scaleY={1.2 * (isStereoXY ? xyScale : 1) * beatFlash}
+              scaleX={
+                1.2 *
+                (isStereoXY || mode === "cube"
+                  ? mode === "cube"
+                    ? 1
+                    : xyScale
+                  : 1) *
+                beatFlash
+              }
+              scaleY={
+                1.2 *
+                (isStereoXY || mode === "cube"
+                  ? mode === "cube"
+                    ? 1
+                    : xyScale
+                  : 1) *
+                beatFlash
+              }
               color="#00ff00"
+              mode={mode === "yt" ? "yt" : "xy"}
+              speed={beamSpeed}
             />
           )}
         </group>
@@ -257,14 +295,30 @@ const R3FCanvas = () => {
           <group position={[offsetX, offsetY, 0]}>
             <WaveformTrail
               signal={signalToDraw}
-              signalB={mode === "xy" ? xySignalB : undefined}
-              mode={mode as "yt" | "xy"}
+              signalB={mode === "xy" || mode === "cube" ? xySignalB : undefined}
+              mode={mode === "yt" ? "yt" : "xy"}
               trailLength={trailLengthMod}
               width={8}
               height={6}
               amplitudeScale={autoGain ? 1.5 * dynamicScale : manualGain}
-              scaleX={1.2 * (isStereoXY ? xyScale : 1) * beatFlash}
-              scaleY={1.2 * (isStereoXY ? xyScale : 1) * beatFlash}
+              scaleX={
+                1.2 *
+                (isStereoXY || mode === "cube"
+                  ? mode === "cube"
+                    ? 1
+                    : xyScale
+                  : 1) *
+                beatFlash
+              }
+              scaleY={
+                1.2 *
+                (isStereoXY || mode === "cube"
+                  ? mode === "cube"
+                    ? 1
+                    : xyScale
+                  : 1) *
+                beatFlash
+              }
               color="#00ff00"
               lineWidth={0.02}
             />

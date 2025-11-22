@@ -10,49 +10,57 @@ interface XYPlotProps {
   scaleX?: number;
   scaleY?: number;
   color?: string;
+  mode?: "yt" | "xy";
+  speed?: number; // Traversal speed (buffer indices per second)
 }
 
 export default function XYPlot({
   width,
   height,
   signalA,
-  scaleY,
+  signalB,
+  scaleX = 1,
+  scaleY = 1,
   color = "#00ff00",
+  mode = "yt",
+  speed = 1000, // Default speed
 }: XYPlotProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const lightRef = useRef<THREE.PointLight>(null);
   const trailGeoRef = useRef<THREE.BufferGeometry>(null);
 
-  // Animation state: Start at center (0)
-  const xPos = useRef(0);
+  // Animation state
+  const xPos = useRef(0); // For YT mode (screen position)
+  const signalIndex = useRef(0); // For XY mode (buffer index)
 
   // Trail Configuration
-  const TRAIL_LENGTH = 150;
+  // Max points for the trail line.
+  // For Cube (2000 pts), 2000 is enough to show full shape.
+  // For Audio (1024 pts), 1024 is enough.
+  const MAX_TRAIL_POINTS = 2048;
+  const PERSISTENCE_SECONDS = 0.15; // How long the phosphor glows
 
   // Initialize buffers
   const { positions, colors } = useMemo(() => {
-    const pos = new Float32Array(TRAIL_LENGTH * 3);
-    const cols = new Float32Array(TRAIL_LENGTH * 3);
+    const pos = new Float32Array(MAX_TRAIL_POINTS * 3);
+    const cols = new Float32Array(MAX_TRAIL_POINTS * 3);
     const c = new THREE.Color(color);
 
-    for (let i = 0; i < TRAIL_LENGTH; i++) {
-      // Initialize all points to center
+    for (let i = 0; i < MAX_TRAIL_POINTS; i++) {
       pos[i * 3] = 0;
       pos[i * 3 + 1] = 0;
-      pos[i * 3 + 2] = 0.1;
+      pos[i * 3 + 2] = 0;
 
-      // Pre-calculate fade colors (Oldest -> Newest)
-      // Phosphor decay is often exponential
-      const t = i / (TRAIL_LENGTH - 1);
-      const alpha = Math.pow(t, 3); // Cubic fade for sharper tail
+      // Pre-calculate fade colors (Newest -> Oldest)
+      // Index 0 is the Beam (Newest), Index MAX is Oldest
+      const t = 1 - i / (MAX_TRAIL_POINTS - 1); // 1 at head, 0 at tail
 
-      // Mix from Green to White-ish at the tip
-      // Tip (t=1) should be close to white/yellow
-      // Tail (t=0) should be pure green/transparent
+      // Fade logic
+      const alpha = Math.pow(t, 2);
 
-      const r = c.r * alpha + (1 - c.r) * Math.pow(t, 10); // Add white hot core
-      const g = c.g * alpha + (1 - c.g) * Math.pow(t, 10);
-      const b = c.b * alpha + (1 - c.b) * Math.pow(t, 10);
+      const r = c.r * alpha + (1 - c.r) * Math.pow(t, 20); // White hot tip
+      const g = c.g * alpha + (1 - c.g) * Math.pow(t, 20);
+      const b = c.b * alpha + (1 - c.b) * Math.pow(t, 20);
 
       cols[i * 3] = r;
       cols[i * 3 + 1] = g;
@@ -64,61 +72,82 @@ export default function XYPlot({
   useFrame((_, delta) => {
     if (!meshRef.current || !lightRef.current || !trailGeoRef.current) return;
 
-    // 1. Update Beam Position (Physics)
-    // Move left to right
-    xPos.current += delta * (width / 2);
-    const halfWidth = width / 2;
-
-    // Wrap around (Blanking simulation)
-    let isBlanking = false;
-    if (xPos.current > halfWidth) {
-      xPos.current = -halfWidth;
-      isBlanking = true;
-    }
-
-    const currentX = xPos.current;
-
-    // Map X position to Signal Index (Analog Simulation)
-    // "Un voltaje de señal se aplica... para moverlo hacia arriba o hacia abajo"
+    let currentX = 0;
     let currentY = 0;
-    if (signalA && signalA.length > 0) {
-      const normalizedX = (currentX + halfWidth) / width; // 0..1
-      const index = Math.floor(normalizedX * (signalA.length - 1));
-      const safeIndex = Math.max(0, Math.min(index, signalA.length - 1));
-      const sY = scaleY || 1;
-      currentY = signalA[safeIndex] * (height / 2) * sY;
-    }
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
 
-    const currentZ = 0.1;
+    // Determine how many points to draw based on speed
+    // length = speed (pts/sec) * persistence (sec)
+    // e.g. 200 * 0.15 = 30 points
+    // e.g. 120000 * 0.15 = 18000 points -> clamped to MAX
+    const activeTrailLength = Math.min(
+      MAX_TRAIL_POINTS,
+      Math.floor(speed * PERSISTENCE_SECONDS)
+    );
 
-    // Update Beam Mesh
-    meshRef.current.position.set(currentX, currentY, currentZ);
-    lightRef.current.position.set(currentX, currentY, currentZ);
+    // Update Geometry Draw Range to only render active points
+    trailGeoRef.current.setDrawRange(0, activeTrailLength);
 
-    // 2. Update Trail (Persistence)
-    const posArray = trailGeoRef.current.attributes.position
-      .array as Float32Array;
+    if (mode === "yt") {
+      // YT Mode Logic (Simplified for now, mostly static sweep)
+      xPos.current += delta * (width / 2);
+      if (xPos.current > halfWidth) xPos.current = -halfWidth;
+      currentX = xPos.current;
 
-    if (isBlanking) {
-      // If blanking, reset trail to new start to avoid cross-screen line
-      for (let i = 0; i < TRAIL_LENGTH; i++) {
-        posArray[i * 3] = currentX;
-        posArray[i * 3 + 1] = currentY;
-        posArray[i * 3 + 2] = currentZ;
+      if (signalA && signalA.length > 0) {
+        const normalizedX = (currentX + halfWidth) / width;
+        const index = Math.floor(normalizedX * (signalA.length - 1));
+        const safeIndex = Math.max(0, Math.min(index, signalA.length - 1));
+        currentY = signalA[safeIndex] * halfHeight * scaleY;
       }
+
+      // YT Trail not implemented in this specific component (use WaveformTrail)
+      // Just update beam
+      meshRef.current.position.set(currentX, currentY, 0.1);
+      lightRef.current.position.set(currentX, currentY, 0.1);
     } else {
-      // Shift history: Drop oldest, add newest
-      // Efficient array shift
-      posArray.copyWithin(0, 3);
+      // XY Mode Logic
+      if (signalA && signalB && signalA.length > 0) {
+        // Advance index
+        signalIndex.current += speed * delta;
 
-      // Set newest point at the end
-      const lastIdx = (TRAIL_LENGTH - 1) * 3;
-      posArray[lastIdx] = currentX;
-      posArray[lastIdx + 1] = currentY;
-      posArray[lastIdx + 2] = currentZ;
+        // Wrap index for calculation, but keep float for smoothness
+        const currentIndex = signalIndex.current;
+        const len = signalA.length;
+
+        // Update Beam Position
+        const idx = Math.floor(currentIndex) % len;
+        const safeIdx = idx < 0 ? idx + len : idx; // Handle negative?
+
+        currentX = signalA[safeIdx] * halfWidth * scaleX;
+        currentY = signalB[safeIdx] * halfHeight * scaleY;
+
+        meshRef.current.position.set(currentX, currentY, 0.1);
+        lightRef.current.position.set(currentX, currentY, 0.1);
+
+        // Update Trail Buffer
+        const posArray = trailGeoRef.current.attributes.position
+          .array as Float32Array;
+
+        // Fill buffer backwards from current index
+        for (let i = 0; i < activeTrailLength; i++) {
+          // Calculate index in signal buffer
+          // We go backwards: current - i
+          let sampleIdx = Math.floor(currentIndex - i) % len;
+          if (sampleIdx < 0) sampleIdx += len;
+
+          const x = signalA[sampleIdx] * halfWidth * scaleX;
+          const y = signalB[sampleIdx] * halfHeight * scaleY;
+
+          posArray[i * 3] = x;
+          posArray[i * 3 + 1] = y;
+          posArray[i * 3 + 2] = 0.1 - i * 0.0001; // Slight Z-fighting prevention
+        }
+
+        trailGeoRef.current.attributes.position.needsUpdate = true;
+      }
     }
-
-    trailGeoRef.current.attributes.position.needsUpdate = true;
   });
 
   return (
@@ -128,14 +157,14 @@ export default function XYPlot({
         <bufferGeometry ref={trailGeoRef}>
           <bufferAttribute
             attach="attributes-position"
-            count={TRAIL_LENGTH}
+            count={MAX_TRAIL_POINTS}
             array={positions}
             itemSize={3}
             args={[positions, 3]}
           />
           <bufferAttribute
             attach="attributes-color"
-            count={TRAIL_LENGTH}
+            count={MAX_TRAIL_POINTS}
             array={colors}
             itemSize={3}
             args={[colors, 3]}
@@ -153,11 +182,8 @@ export default function XYPlot({
 
       {/* The Electron Beam (Glowing Dot) */}
       <mesh ref={meshRef} position={[0, 0, 0.1]}>
-        <sphereGeometry args={[0.15, 32, 32]} />
-        <meshBasicMaterial
-          color={[10, 20, 10]} // HDR Color: Multiplied values to drive Bloom
-          toneMapped={false}
-        />
+        <sphereGeometry args={[0.02, 32, 32]} />
+        <meshBasicMaterial color={[10, 20, 10]} toneMapped={false} />
       </mesh>
 
       {/* Light emitted by the beam */}
