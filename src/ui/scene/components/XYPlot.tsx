@@ -13,6 +13,7 @@ interface XYPlotProps {
   mode?: "yt" | "xy";
   speed?: number; // Traversal speed (buffer indices per second)
   zDepth?: number; // Volumetric depth (Time Tunnel)
+  physicsRef?: React.MutableRefObject<{ warmth: number; stability: number; focus: number }>;
 }
 
 export default function XYPlot({
@@ -26,6 +27,7 @@ export default function XYPlot({
   mode = "yt",
   speed = 1000, // Default speed
   zDepth = 0,
+  physicsRef,
 }: XYPlotProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const lightRef = useRef<THREE.PointLight>(null);
@@ -123,9 +125,27 @@ export default function XYPlot({
 
         // Analog Jitter (Section D: Noise/Imperfection)
         // Simulates electronic noise in deflection coils
-        const jitterAmount = 0.002; 
-        const jitterX = (Math.random() - 0.5) * jitterAmount;
-        const jitterY = (Math.random() - 0.5) * jitterAmount;
+        
+        // Read physics from ref if available, else default
+        const warmth = physicsRef ? physicsRef.current.warmth : 0;
+        const stability = physicsRef ? physicsRef.current.stability : 1.0;
+
+        // Warmth 0.0 -> 0.001 jitter
+        // Warmth 1.0 -> 0.02 jitter (heavy noise)
+        const baseJitter = 0.001;
+        const jitterAmount = baseJitter + (warmth * 0.02); 
+        
+        // Stability Glitch
+        // If stability < 1.0, chance of large offset
+        let glitchX = 0;
+        let glitchY = 0;
+        if (stability < 0.99 && Math.random() > stability) {
+             glitchX = (Math.random() - 0.5) * width * 0.2; // Jump up to 20% of screen
+             glitchY = (Math.random() - 0.5) * height * 0.2;
+        }
+
+        const jitterX = (Math.random() - 0.5) * jitterAmount + glitchX;
+        const jitterY = (Math.random() - 0.5) * jitterAmount + glitchY;
 
         currentX = (signalA[safeIdx] * halfWidth * scaleX) + jitterX;
         currentY = (signalB[safeIdx] * halfHeight * scaleY) + jitterY;
@@ -147,8 +167,8 @@ export default function XYPlot({
           if (sampleIdx < 0) sampleIdx += len;
 
           // Apply jitter to trail too for coherent noise look
-          const tJitterX = (Math.random() - 0.5) * (jitterAmount * 0.5);
-          const tJitterY = (Math.random() - 0.5) * (jitterAmount * 0.5);
+          const tJitterX = (Math.random() - 0.5) * (jitterAmount * 0.5) + glitchX;
+          const tJitterY = (Math.random() - 0.5) * (jitterAmount * 0.5) + glitchY;
 
           const x = (signalA[sampleIdx] * halfWidth * scaleX) + tJitterX;
           const y = (signalB[sampleIdx] * halfHeight * scaleY) + tJitterY;

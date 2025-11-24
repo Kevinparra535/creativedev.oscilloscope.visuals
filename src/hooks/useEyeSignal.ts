@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import * as THREE from "three";
 import { createNoise3D } from "simplex-noise";
 
@@ -32,7 +32,7 @@ export default function useEyeSignal({
   const timeRef = useRef(0);
   
   // Noise for pupil movement
-  const noise3D = useRef(createNoise3D()).current;
+  const noise3D = useMemo(() => createNoise3D(), []);
 
   useEffect(() => {
     if (!active) return;
@@ -207,6 +207,7 @@ export default function useEyeSignal({
     layoutMode,
     gridRows,
     gridCols,
+    noise3D
   ]);
 
   return { signalA, signalB };

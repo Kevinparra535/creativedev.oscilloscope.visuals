@@ -1,6 +1,6 @@
-import { Canvas } from "@react-three/fiber";
-import { useEffect, useMemo, useState } from "react";
-import { Leva, useControls, folder } from "leva";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useState, useRef } from "react";
+import * as THREE from "three";
 import {
   EffectComposer,
   Bloom,
@@ -26,6 +26,7 @@ import usePlanetSignal from "../../hooks/usePlanetSignal";
 import useChaosSignal from "../../hooks/useChaosSignal";
 import useBrainSignal from "../../hooks/useBrainSignal";
 import useEyeSignal from "../../hooks/useEyeSignal";
+import { useAIBrain, type BrainProfile } from "../../hooks/useAIBrain";
 
 import { createTestSignal } from "../../utils/signalGenerator";
 
@@ -44,167 +45,194 @@ import {
 const SCREEN_WIDTH = 8;
 const SCREEN_HEIGHT = 6;
 
+interface AudioFeatures {
+  rmsGlobal: number;
+  bands: {
+    low: { smoothed: number };
+    mid: { smoothed: number };
+    high: { smoothed: number };
+  };
+  beat: {
+    isBeat: boolean;
+    confidence: number;
+  };
+}
+
+interface PhysicsState {
+  warmth: number;
+  stability: number;
+  focus: number;
+}
+
+// Inner component to handle AI Brain logic inside Canvas context
+const AIDirector = ({
+  analysis,
+  audioFeatures,
+  setFigureType,
+  setAttractorType,
+  setTextInput,
+  setLayoutMode,
+  setTargetClones,
+  setMode,
+  setBeamSpeed,
+  groupRef,
+  physicsRef,
+}: {
+  analysis: BrainProfile;
+  audioFeatures: AudioFeatures;
+  setFigureType: (type: string) => void;
+  setAttractorType: (type: string) => void;
+  setTextInput: (text: string) => void;
+  setLayoutMode: (mode: string) => void;
+  setTargetClones: (count: number) => void;
+  setMode: (mode: string) => void;
+  setBeamSpeed: (speed: number) => void;
+  groupRef: React.MutableRefObject<THREE.Group | null>;
+  physicsRef: React.MutableRefObject<PhysicsState>;
+}) => {
+  const { brainState, getRealtimeValues } = useAIBrain(analysis, audioFeatures);
+
+  // 1. Sync "Slow" State (Modes, Colors, Generator Params)
+  useEffect(() => {
+    if (brainState.currentFigure) setFigureType(brainState.currentFigure);
+    if (brainState.attractorType) setAttractorType(brainState.attractorType);
+    if (brainState.textString) setTextInput(brainState.textString);
+    if (brainState.layoutMode) setLayoutMode(brainState.layoutMode);
+    if (brainState.cloneCount) setTargetClones(brainState.cloneCount);
+    if (brainState.mode) setMode(brainState.mode);
+    if (brainState.beamSpeed) setBeamSpeed(brainState.beamSpeed);
+
+    // Note: Color syncing would go here if we exposed setGroupColor
+  }, [
+    brainState,
+    setFigureType,
+    setAttractorType,
+    setTextInput,
+    setLayoutMode,
+    setTargetClones,
+    setMode,
+    setBeamSpeed,
+  ]);
+
+  // 2. Sync "Fast" Physics (Rotation, Distortion)
+  useFrame(() => {
+    const values = getRealtimeValues();
+
+    // Sync to shared ref for other components
+    if (physicsRef.current) {
+      physicsRef.current.warmth = values.warmth;
+      physicsRef.current.focus = values.focus;
+      physicsRef.current.stability = values.stability;
+    }
+
+    // Apply rotation directly to the group ref for performance
+    if (groupRef.current) {
+      const is3D = ["cube", "planet", "brain", "eye", "chaos"].includes(
+        brainState.currentFigure
+      );
+
+      if (is3D) {
+        // Rotate X and Y for 3D feel
+        groupRef.current.rotation.y += values.rotation * 0.01;
+        groupRef.current.rotation.x += values.rotation * 0.005;
+      } else {
+        // Reset rotation for 2D figures (Text, Waveform) to ensure visibility
+        // Smoothly interpolate back to 0 to avoid snapping
+        groupRef.current.rotation.y *= 0.9;
+        groupRef.current.rotation.x *= 0.9;
+        if (Math.abs(groupRef.current.rotation.y) < 0.001)
+          groupRef.current.rotation.y = 0;
+        if (Math.abs(groupRef.current.rotation.x) < 0.001)
+          groupRef.current.rotation.x = 0;
+      }
+
+      // Apply zoom/scale breathing
+      // Base scale from AI brain (default 1 if undefined)
+      const baseScale = brainState.targetScale || 1;
+      const breathing = 1 + (values.zoom - 12) * 0.05;
+      groupRef.current.scale.setScalar(baseScale * breathing);
+    }
+  });
+
+  return null;
+};
+
+const DynamicEffects = ({
+  physicsRef,
+  beat,
+}: {
+  physicsRef: React.MutableRefObject<PhysicsState>;
+  beat: AudioFeatures["beat"];
+}) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const bloomRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const noiseRef = useRef<any>(null);
+
+  useFrame(() => {
+    if (!physicsRef.current) return;
+    const { focus, warmth } = physicsRef.current;
+
+    if (bloomRef.current) {
+      const baseIntensity = 1.5 + focus * 3.0;
+      const beatMult = beat.isBeat ? 1.5 : 1.0;
+      // Smooth lerp for intensity to avoid flickering
+      bloomRef.current.intensity = THREE.MathUtils.lerp(
+        bloomRef.current.intensity,
+        baseIntensity * beatMult,
+        0.1
+      );
+      bloomRef.current.luminanceThreshold = 0.1 - focus * 0.08;
+    }
+
+    if (noiseRef.current) {
+      noiseRef.current.opacity = 0.02 + warmth * 0.13;
+    }
+  });
+
+  return (
+    <EffectComposer>
+      <Bloom ref={bloomRef} luminanceSmoothing={0.9} mipmapBlur />
+      <Vignette eskil={false} offset={0.1} darkness={1.1} />
+      <Noise ref={noiseRef} opacity={0.05} />
+    </EffectComposer>
+  );
+};
+
 const R3FCanvas = () => {
   const [beamSpeed, setBeamSpeed] = useState(1000);
-  const [cubeRotationSpeed, setCubeRotationSpeed] = useState(0);
   const [cloneCount, setCloneCount] = useState(1);
+  const groupRef = useRef<THREE.Group>(null);
+  const physicsRef = useRef<PhysicsState>({
+    warmth: 0,
+    stability: 1,
+    focus: 0,
+  });
+
+  // AI State
+  const [aiFigure, setAiFigure] = useState<string | null>(null);
+  const [attractorType, setAttractorType] = useState("lorenz");
+  const [textInput, setTextInput] = useState("AI");
+  const [layoutMode, setLayoutMode] = useState("polygon");
+  const [targetClones, setTargetClones] = useState(1);
+  const [mode, setMode] = useState("xy"); // Default to XY
+  const [audioSource] = useState("mic");
 
   // Analysis Modal State
   const [showModal, setShowModal] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [promptInput, setPromptInput] = useState("");
 
-  const { mode, figureType, audioSource, textInput, attractorType } =
-    useControls({
-      Mode: folder({
-        mode: {
-          options: { "Y–T": "yt", XY: "xy" },
-          value: "xy",
-        },
-        figureType: {
-          options: {
-            Default: "default",
-            "3D Cube": "cube",
-            "3D Text": "text",
-            "3D Planet": "planet",
-            "Chaos Attractor": "chaos",
-            "3D Brain": "brain",
-            "3D Eye": "eye",
-          },
-          value: "cube",
-          label: "Figure",
-        },
-        attractorType: {
-          options: { Lorenz: "lorenz", Rossler: "rossler", Aizawa: "aizawa" },
-          value: "lorenz",
-          label: "Attractor Type",
-          render: (get) => get("Mode.figureType") === "chaos",
-        },
-        textInput: {
-          value: "OSCILLOSCOPE",
-          label: "Text Input",
-          render: (get) => get("Mode.figureType") === "text",
-        },
-        audioSource: {
-          options: { Microphone: "mic", "Upload File": "file" },
-          value: "mic",
-          label: "Audio Source",
-          render: (get) => get("Mode.figureType") === "default",
-        },
-      }),
-    });
+  // Removed Leva useControls
+  const figureType = aiFigure || "cube"; // Default to cube if no AI
 
-  // Calculate dynamic max clones based on text length
-  const maxClonesLimit = useMemo(() => {
-    if (
-      figureType === "cube" ||
-      figureType === "planet" ||
-      figureType === "chaos" ||
-      figureType === "brain" ||
-      figureType === "eye"
-    )
-      return 8;
-    // Use the actual text length that will be rendered (substring 0, 12)
-    const effectiveText = textInput.substring(0, 12);
-    const len = effectiveText.length || 1;
-    // Heuristic: 12 chars -> 5 clones (60/12).
-    return Math.max(1, Math.min(8, Math.floor(60 / len)));
-  }, [figureType, textInput]);
-
-  const { enableFormation, formationDelay, targetClones } = useControls(
-    "Animation (Radial)",
-    {
-      enableFormation: { value: true, label: "Enable Formation" },
-      formationDelay: {
-        value: 40,
-        min: 0,
-        max: 120,
-        step: 1,
-        label: "Start Delay (s)",
-      },
-      targetClones: {
-        value: 5,
-        min: 1,
-        max: maxClonesLimit,
-        step: 1,
-        label: "Target Count",
-      },
-    },
-    {
-      collapsed: false,
-      render: (get) => get("Animation Style.layoutMode") === "polygon",
-    },
-    [maxClonesLimit]
-  );
-
-  const { gridRows, gridCols } = useControls(
-    "Animation (Grid)",
-    {
-      gridRows: {
-        value: 2,
-        min: 1,
-        max: 5,
-        step: 1,
-        label: "Rows",
-      },
-      gridCols: {
-        value: 3,
-        min: 1,
-        max: 5,
-        step: 1,
-        label: "Columns",
-      },
-    },
-    {
-      collapsed: false,
-      render: (get) => get("Animation Style.layoutMode") === "grid",
-    }
-  );
-
-  const { layoutMode } = useControls("Animation Style", {
-    layoutMode: {
-      options: { "Radial (Polygon)": "polygon", "Matrix (Grid)": "grid" },
-      value: "polygon",
-      label: "Formation Type",
-    },
-  });
-
-  const { enableRotation, zDepth } = useControls("3D Volumetric", {
-    enableRotation: { value: false, label: "Enable Rotation" },
-    zDepth: { value: 0, min: 0, max: 20, step: 0.1, label: "Time Depth" },
-  });
-
-  // Ensure we don't exceed the limit even if the slider value is stale
-  const effectiveTargetClones =
-    layoutMode === "grid"
-      ? gridRows * gridCols
-      : Math.min(targetClones, maxClonesLimit);
-
-  // Dynamic points count to ensure quality in grid mode
-  // 2000 points total is not enough for multiple grid cells.
-  // We'll allocate ~1000 points per clone/cell to ensure high resolution.
-  const dynamicPointsCount = Math.max(2000, effectiveTargetClones * 1000);
-
-  // Default values for removed controls
-  const msPerDiv = 10;
-  const autoGain = true;
-  const manualGain = 1.5;
-  const showTrigger = true;
-  const showPersistence = false;
-  const trailLength = 20;
-  const bloomIntensity = 4.0;
-  const bloomThreshold = 0.05;
-  const scaleGain = 0.5;
-  const rotateGain = 0.3;
-  const thicknessGain = 0.5;
-  const trailBoost = 10;
-  const offsetX = 0;
-  const offsetY = 0;
-  const divisionsX = 8;
-  const effectiveWindowSize = useMemo(
-    () => Math.max(128, Math.round((msPerDiv * divisionsX * 44100) / 1000)),
-    [msPerDiv]
-  );
+  // Hardcoded animation settings (controlled by AI via targetClones/layoutMode)
+  const enableFormation = true;
+  const formationDelay = 0;
+  const gridRows = 2; // Default, AI can override if we add it to BrainState
+  const gridCols = 3;
+  const enableRotation = false;
+  const zDepth = 0;
 
   // Centralized audio input management (mic/file)
   const {
@@ -246,11 +274,61 @@ const R3FCanvas = () => {
     stop(); // Stop any pre-loaded audio
   };
 
+  // Determine effective figure type (AI overrides manual if analysis is present)
+  const effectiveFigureType = analysis && aiFigure ? aiFigure : figureType;
+
+  // Calculate dynamic max clones based on text length
+  const maxClonesLimit = useMemo(() => {
+    if (
+      effectiveFigureType === "cube" ||
+      effectiveFigureType === "planet" ||
+      effectiveFigureType === "chaos" ||
+      effectiveFigureType === "brain" ||
+      effectiveFigureType === "eye"
+    )
+      return 8;
+    // Use the actual text length that will be rendered (substring 0, 12)
+    const effectiveText = textInput.substring(0, 12);
+    const len = effectiveText.length || 1;
+    // Heuristic: 12 chars -> 5 clones (60/12).
+    return Math.max(1, Math.min(8, Math.floor(60 / len)));
+  }, [effectiveFigureType, textInput]);
+
+  // Ensure we don't exceed the limit even if the slider value is stale
+  const effectiveTargetClones =
+    layoutMode === "grid"
+      ? gridRows * gridCols
+      : Math.min(targetClones, maxClonesLimit);
+
+  // Dynamic points count to ensure quality in grid mode
+  // 2000 points total is not enough for multiple grid cells.
+  // We'll allocate ~1000 points per clone/cell to ensure high resolution.
+  const dynamicPointsCount = Math.max(2000, effectiveTargetClones * 1000);
+
+  // Default values for removed controls
+  const msPerDiv = 10;
+  const autoGain = true;
+  const manualGain = 1.5;
+  const showTrigger = true;
+  const showPersistence = false;
+  const trailLength = 20;
+  const scaleGain = 0.5;
+  const rotateGain = 0.3;
+  const thicknessGain = 0.5;
+  const trailBoost = 10;
+  const offsetX = 0;
+  const offsetY = 0;
+  const divisionsX = 8;
+  const effectiveWindowSize = useMemo(
+    () => Math.max(128, Math.round((msPerDiv * divisionsX * 44100) / 1000)),
+    [msPerDiv]
+  );
+
   // Audio features for visual mapping
   const { rmsGlobal, bands, beat } = useAudioFeatures({
     fftSize: 2048,
     source: "mic", // Features always come from mic/shared context for now
-    updateIntervalMs: 33,
+    updateIntervalMs: 16, // ~60fps analysis for smoother reaction
     smoothingAlpha: 0.15,
     beatThreshold: 1.4,
     beatCooldownMs: 120,
@@ -258,9 +336,9 @@ const R3FCanvas = () => {
 
   // Cube Signal Generator
   const { signalA: cubeA, signalB: cubeB } = useCubeSignal({
-    active: figureType === "cube",
+    active: effectiveFigureType === "cube",
     pointsCount: dynamicPointsCount,
-    rotationSpeed: cubeRotationSpeed,
+    rotationSpeed: 0,
     cloneCount,
     layoutMode: layoutMode as "polygon" | "grid",
     gridRows,
@@ -269,7 +347,7 @@ const R3FCanvas = () => {
 
   // Text Signal Generator
   const { signalA: textA, signalB: textB } = useTextSignal({
-    active: figureType === "text",
+    active: effectiveFigureType === "text",
     text: textInput,
     pointsCount: dynamicPointsCount,
     rotationSpeed: 0,
@@ -283,9 +361,9 @@ const R3FCanvas = () => {
 
   // Planet Signal Generator
   const { signalA: planetA, signalB: planetB } = usePlanetSignal({
-    active: figureType === "planet",
+    active: effectiveFigureType === "planet",
     pointsCount: dynamicPointsCount,
-    rotationSpeed: cubeRotationSpeed,
+    rotationSpeed: 0,
     cloneCount,
     layoutMode: layoutMode as "polygon" | "grid",
     gridRows,
@@ -294,9 +372,9 @@ const R3FCanvas = () => {
 
   // Chaos Signal Generator
   const { signalA: chaosA, signalB: chaosB } = useChaosSignal({
-    active: figureType === "chaos",
+    active: effectiveFigureType === "chaos",
     pointsCount: dynamicPointsCount,
-    rotationSpeed: cubeRotationSpeed,
+    rotationSpeed: 0,
     cloneCount,
     layoutMode: layoutMode as "polygon" | "grid",
     gridRows,
@@ -306,9 +384,9 @@ const R3FCanvas = () => {
 
   // Brain Signal Generator
   const { signalA: brainA, signalB: brainB } = useBrainSignal({
-    active: figureType === "brain",
+    active: effectiveFigureType === "brain",
     pointsCount: dynamicPointsCount,
-    rotationSpeed: cubeRotationSpeed,
+    rotationSpeed: 0,
     cloneCount,
     layoutMode: layoutMode as "polygon" | "grid",
     gridRows,
@@ -317,7 +395,7 @@ const R3FCanvas = () => {
 
   // Eye Signal Generator
   const { signalA: eyeA, signalB: eyeB } = useEyeSignal({
-    active: figureType === "eye",
+    active: effectiveFigureType === "eye",
     pointsCount: dynamicPointsCount,
     cloneCount,
     layoutMode: layoutMode as "polygon" | "grid",
@@ -326,14 +404,16 @@ const R3FCanvas = () => {
   });
 
   // Speed Ramp Logic for Cube/Text Mode
+  const isFirstRender = useRef(true);
+
   useEffect(() => {
     if (
-      figureType === "cube" ||
-      figureType === "text" ||
-      figureType === "planet" ||
-      figureType === "chaos" ||
-      figureType === "brain" ||
-      figureType === "eye"
+      effectiveFigureType === "cube" ||
+      effectiveFigureType === "text" ||
+      effectiveFigureType === "planet" ||
+      effectiveFigureType === "chaos" ||
+      effectiveFigureType === "brain" ||
+      effectiveFigureType === "eye"
     ) {
       let frameId: number;
       const startTime = performance.now();
@@ -392,52 +472,54 @@ const R3FCanvas = () => {
         }
       }
 
-      const animate = () => {
-        const elapsed = performance.now() - startTime;
-        const progress = Math.min(elapsed / duration, 1);
+      // Target speed: Traverse full buffer (dynamic size) every frame
+      // Base speed needs to scale with points count to maintain brightness/continuity
+      const pointsBase = dynamicPointsCount;
+      const targetSpeed = pointsBase * 60; // Traverse full buffer 60 times a second? No, once per frame (60fps)
+      // Actually, speed is points per second.
+      // To draw the whole shape once per frame: speed = pointsCount * 60.
 
-        // Target speed: Traverse full buffer (dynamic size) every frame
-        // Base speed needs to scale with points count to maintain brightness/continuity
-        const pointsBase = dynamicPointsCount;
-        const targetSpeed = pointsBase * 60; // Traverse full buffer 60 times a second? No, once per frame (60fps)
-        // Actually, speed is points per second.
-        // To draw the whole shape once per frame: speed = pointsCount * 60.
+      if (isFirstRender.current) {
+        const animate = () => {
+          const elapsed = performance.now() - startTime;
+          const progress = Math.min(elapsed / duration, 1);
 
-        const startSpeed = 1000;
+          const startSpeed = 1000;
 
-        // Quartic ease-in: starts very slow, accelerates steeply at the end
-        const ease = Math.pow(progress, 4);
-        const current = startSpeed + (targetSpeed - startSpeed) * ease;
+          // Quartic ease-in: starts very slow, accelerates steeply at the end
+          const ease = Math.pow(progress, 4);
+          const current = startSpeed + (targetSpeed - startSpeed) * ease;
 
-        setBeamSpeed(current);
+          setBeamSpeed(current);
 
-        // Ramp rotation speed: Start static (0) and ramp to 1
-        const rotationEase = Math.pow(progress, 3);
-        setCubeRotationSpeed(rotationEase);
+          if (progress < 1) {
+            frameId = requestAnimationFrame(animate);
+          }
+        };
 
-        if (progress < 1) {
-          frameId = requestAnimationFrame(animate);
-        }
-      };
-
-      // Start animation loop
-      frameId = requestAnimationFrame(animate);
+        // Start animation loop
+        frameId = requestAnimationFrame(animate);
+      } else {
+        // Instant speed update for subsequent mode changes
+        setBeamSpeed(targetSpeed);
+      }
 
       return () => {
-        cancelAnimationFrame(frameId);
+        if (frameId) cancelAnimationFrame(frameId);
         formationTimers.forEach((t) => clearTimeout(t));
+        // Mark first render as done when we exit this effect (change mode)
+        isFirstRender.current = false;
       };
     } else {
       // Defer state update to avoid synchronous effect warning
       const timeoutId = setTimeout(() => {
         setBeamSpeed(1000);
-        setCubeRotationSpeed(0);
         setCloneCount(1);
       }, 0);
       return () => clearTimeout(timeoutId);
     }
   }, [
-    figureType,
+    effectiveFigureType,
     enableFormation,
     formationDelay,
     effectiveTargetClones,
@@ -476,17 +558,17 @@ const R3FCanvas = () => {
 
   const fallback = useMemo(() => createTestSignal("sine", 440, 0.1), []);
   const signalToDraw =
-    figureType === "cube"
+    effectiveFigureType === "cube"
       ? cubeA
-      : figureType === "text"
+      : effectiveFigureType === "text"
         ? textA
-        : figureType === "planet"
+        : effectiveFigureType === "planet"
           ? planetA
-          : figureType === "chaos"
+          : effectiveFigureType === "chaos"
             ? chaosA
-            : figureType === "brain"
+            : effectiveFigureType === "brain"
               ? brainA
-              : figureType === "eye"
+              : effectiveFigureType === "eye"
                 ? eyeA
                 : liveWindow.some((v) => v !== 0)
                   ? liveWindow
@@ -521,33 +603,33 @@ const R3FCanvas = () => {
   });
 
   const xySignalA =
-    figureType === "cube"
+    effectiveFigureType === "cube"
       ? cubeA
-      : figureType === "text"
+      : effectiveFigureType === "text"
         ? textA
-        : figureType === "planet"
+        : effectiveFigureType === "planet"
           ? planetA
-          : figureType === "chaos"
+          : effectiveFigureType === "chaos"
             ? chaosA
-            : figureType === "brain"
+            : effectiveFigureType === "brain"
               ? brainA
-              : figureType === "eye"
+              : effectiveFigureType === "eye"
                 ? eyeA
                 : isStereoXY && leftXY.some((v) => v !== 0)
                   ? leftXY
                   : signalToDraw;
   const xySignalB =
-    figureType === "cube"
+    effectiveFigureType === "cube"
       ? cubeB
-      : figureType === "text"
+      : effectiveFigureType === "text"
         ? textB
-        : figureType === "planet"
+        : effectiveFigureType === "planet"
           ? planetB
-          : figureType === "chaos"
+          : effectiveFigureType === "chaos"
             ? chaosB
-            : figureType === "brain"
+            : effectiveFigureType === "brain"
               ? brainB
-              : figureType === "eye"
+              : effectiveFigureType === "eye"
                 ? eyeB
                 : isStereoXY && rightXY.some((v) => v !== 0)
                   ? rightXY
@@ -580,20 +662,41 @@ const R3FCanvas = () => {
           opacity={0.4}
         />
 
+        {/* AI Director */}
+        {analysis && (
+          <AIDirector
+            analysis={analysis}
+            audioFeatures={{ rmsGlobal, bands, beat }}
+            setFigureType={setAiFigure}
+            setAttractorType={setAttractorType}
+            setTextInput={setTextInput}
+            setLayoutMode={setLayoutMode}
+            setTargetClones={setTargetClones}
+            setMode={setMode}
+            setBeamSpeed={setBeamSpeed}
+            groupRef={groupRef}
+            physicsRef={physicsRef}
+          />
+        )}
+
         <group
+          ref={groupRef}
           position={[offsetX, offsetY, 0]}
           rotation={[
             0,
             0,
-            mode === "xy" && figureType === "default" ? rotateMod : 0,
+            mode === "xy" && effectiveFigureType === "default" ? rotateMod : 0,
           ]}
-          scale={mode === "xy" && figureType === "default" ? scaleMod : 1}
+          scale={
+            mode === "xy" && effectiveFigureType === "default" ? scaleMod : 1
+          }
         >
           {mode === "yt" ? (
             <Waveform
               signal={signalToDraw}
               width={8}
               height={6}
+              physicsRef={physicsRef}
               amplitudeScale={
                 (autoGain ? 1.5 * dynamicScale : manualGain) * beatFlash
               }
@@ -608,43 +711,44 @@ const R3FCanvas = () => {
               signalB={xySignalB}
               width={8}
               height={6}
+              physicsRef={physicsRef}
               scaleX={
-                (figureType === "text" ||
-                figureType === "chaos" ||
-                figureType === "brain" ||
-                figureType === "eye"
+                (effectiveFigureType === "text" ||
+                effectiveFigureType === "chaos" ||
+                effectiveFigureType === "brain" ||
+                effectiveFigureType === "eye"
                   ? 1
                   : 1.2) *
-                (figureType === "cube" ||
-                figureType === "text" ||
-                figureType === "planet" ||
-                figureType === "chaos" ||
-                figureType === "brain" ||
-                figureType === "eye"
+                (effectiveFigureType === "cube" ||
+                effectiveFigureType === "text" ||
+                effectiveFigureType === "planet" ||
+                effectiveFigureType === "chaos" ||
+                effectiveFigureType === "brain" ||
+                effectiveFigureType === "eye"
                   ? 1
                   : isStereoXY
                     ? xyScale
                     : 1) *
-                (figureType === "default" ? beatFlash : 1)
+                (effectiveFigureType === "default" ? beatFlash : 1)
               }
               scaleY={
-                (figureType === "text" ||
-                figureType === "chaos" ||
-                figureType === "brain" ||
-                figureType === "eye"
+                (effectiveFigureType === "text" ||
+                effectiveFigureType === "chaos" ||
+                effectiveFigureType === "brain" ||
+                effectiveFigureType === "eye"
                   ? 1
                   : 1.2) *
-                (figureType === "cube" ||
-                figureType === "text" ||
-                figureType === "planet" ||
-                figureType === "chaos" ||
-                figureType === "brain" ||
-                figureType === "eye"
+                (effectiveFigureType === "cube" ||
+                effectiveFigureType === "text" ||
+                effectiveFigureType === "planet" ||
+                effectiveFigureType === "chaos" ||
+                effectiveFigureType === "brain" ||
+                effectiveFigureType === "eye"
                   ? 1
                   : isStereoXY
                     ? xyScale
                     : 1) *
-                (figureType === "default" ? beatFlash : 1)
+                (effectiveFigureType === "default" ? beatFlash : 1)
               }
               color="#00ff00"
               mode={mode === "yt" ? "yt" : "xy"}
@@ -660,12 +764,12 @@ const R3FCanvas = () => {
               signal={signalToDraw}
               signalB={
                 mode === "xy" ||
-                figureType === "cube" ||
-                figureType === "text" ||
-                figureType === "planet" ||
-                figureType === "chaos" ||
-                figureType === "brain" ||
-                figureType === "eye"
+                effectiveFigureType === "cube" ||
+                effectiveFigureType === "text" ||
+                effectiveFigureType === "planet" ||
+                effectiveFigureType === "chaos" ||
+                effectiveFigureType === "brain" ||
+                effectiveFigureType === "eye"
                   ? xySignalB
                   : undefined
               }
@@ -675,42 +779,42 @@ const R3FCanvas = () => {
               height={6}
               amplitudeScale={autoGain ? 1.5 * dynamicScale : manualGain}
               scaleX={
-                (figureType === "text" ||
-                figureType === "chaos" ||
-                figureType === "brain" ||
-                figureType === "eye"
+                (effectiveFigureType === "text" ||
+                effectiveFigureType === "chaos" ||
+                effectiveFigureType === "brain" ||
+                effectiveFigureType === "eye"
                   ? 1
                   : 1.2) *
-                (figureType === "cube" ||
-                figureType === "text" ||
-                figureType === "planet" ||
-                figureType === "chaos" ||
-                figureType === "brain" ||
-                figureType === "eye"
+                (effectiveFigureType === "cube" ||
+                effectiveFigureType === "text" ||
+                effectiveFigureType === "planet" ||
+                effectiveFigureType === "chaos" ||
+                effectiveFigureType === "brain" ||
+                effectiveFigureType === "eye"
                   ? 1
                   : isStereoXY
                     ? xyScale
                     : 1) *
-                (figureType === "default" ? beatFlash : 1)
+                (effectiveFigureType === "default" ? beatFlash : 1)
               }
               scaleY={
-                (figureType === "text" ||
-                figureType === "chaos" ||
-                figureType === "brain" ||
-                figureType === "eye"
+                (effectiveFigureType === "text" ||
+                effectiveFigureType === "chaos" ||
+                effectiveFigureType === "brain" ||
+                effectiveFigureType === "eye"
                   ? 1
                   : 1.2) *
-                (figureType === "cube" ||
-                figureType === "text" ||
-                figureType === "planet" ||
-                figureType === "chaos" ||
-                figureType === "brain" ||
-                figureType === "eye"
+                (effectiveFigureType === "cube" ||
+                effectiveFigureType === "text" ||
+                effectiveFigureType === "planet" ||
+                effectiveFigureType === "chaos" ||
+                effectiveFigureType === "brain" ||
+                effectiveFigureType === "eye"
                   ? 1
                   : isStereoXY
                     ? xyScale
                     : 1) *
-                (figureType === "default" ? beatFlash : 1)
+                (effectiveFigureType === "default" ? beatFlash : 1)
               }
               color="#00ff00"
               lineWidth={0.02}
@@ -718,19 +822,7 @@ const R3FCanvas = () => {
           </group>
         )}
 
-        <EffectComposer>
-          <Bloom
-            intensity={
-              bloomIntensity *
-              (beat.isBeat && figureType === "default" ? 1.2 : 1)
-            }
-            luminanceThreshold={bloomThreshold}
-            luminanceSmoothing={0.9}
-            mipmapBlur
-          />
-          <Vignette eskil={false} offset={0.1} darkness={1.1} />
-          <Noise opacity={0.05} />
-        </EffectComposer>
+        <DynamicEffects physicsRef={physicsRef} beat={beat} />
       </Canvas>
 
       <AudioTimeline
@@ -780,8 +872,6 @@ const R3FCanvas = () => {
           </LoaderContainer>
         </ModalOverlay>
       )}
-
-      <Leva collapsed />
     </CanvasContainer>
   );
 };

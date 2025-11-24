@@ -40,36 +40,9 @@ const useAudioInput = ({ source, onSourceReady }: UseAudioInputOptions) => {
   const pausedAtRef = useRef<number>(0);
 
   // Analysis State
-  const [analysis, setAnalysis] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [analysis, setAnalysis] = useState<any | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  const analyzeAudio = async (file: File, prompt?: string) => {
-    setIsAnalyzing(true);
-    setAnalysis(null);
-    const formData = new FormData();
-    formData.append("audio", file);
-    if (prompt) formData.append("prompt", prompt);
-
-    try {
-      // Assuming server runs on port 3001
-      const response = await fetch("http://localhost:3001/api/analyze/audio", {
-        method: "POST",
-        body: formData,
-      });
-      const data = await response.json();
-      if (data.success) {
-        setAnalysis(data.analysis);
-        console.log("Audio Analysis Result:", data.analysis);
-        play(); // Start playback only after successful analysis
-      } else {
-        console.error("Analysis failed:", data.error);
-      }
-    } catch (error) {
-      console.error("Analysis request failed:", error);
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
 
   // Cleanup helper
   const cleanup = () => {
@@ -191,7 +164,7 @@ const useAudioInput = ({ source, onSourceReady }: UseAudioInputOptions) => {
   };
 
   // Load file from user upload
-  const loadAudioFile = async (file: File, prompt?: string) => {
+  const loadAudioFile = async (file: File) => {
     if (!contextRef.current || !analyserRef.current) return;
 
     cleanup();
@@ -214,6 +187,42 @@ const useAudioInput = ({ source, onSourceReady }: UseAudioInputOptions) => {
 
     // Trigger Analysis
     // analyzeAudio(file, prompt);
+  };
+
+  const analyzeAudio = async (file: File, prompt?: string) => {
+    setIsAnalyzing(true);
+    setAnalysis(null);
+    
+    // Ensure we start from silence/clean state
+    stop(); 
+    
+    const formData = new FormData();
+    formData.append("audio", file);
+    if (prompt) formData.append("prompt", prompt);
+
+    try {
+      // Assuming server runs on port 3001
+      const response = await fetch("http://localhost:3001/api/analyze/audio", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAnalysis(data.analysis);
+        console.log("Audio Analysis Result:", data.analysis);
+        
+        // Only play if we are not already playing (double safety)
+        if (!isPlaying) {
+           play(); 
+        }
+      } else {
+        console.error("Analysis failed:", data.error);
+      }
+    } catch (error) {
+      console.error("Analysis request failed:", error);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   useEffect(() => {

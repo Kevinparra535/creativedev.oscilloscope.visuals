@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import * as THREE from 'three'
 
 interface WaveformProps {
@@ -10,6 +10,7 @@ interface WaveformProps {
   lineWidth?: number
   triggerIndex?: number
   showTrigger?: boolean
+  physicsRef?: React.MutableRefObject<{ warmth: number; stability: number; focus: number }>
 }
 
 export default function Waveform({
@@ -21,22 +22,42 @@ export default function Waveform({
   lineWidth = 2,
   triggerIndex = 0,
   showTrigger = false,
+  physicsRef,
 }: WaveformProps) {
   const geometryRef = useRef<THREE.BufferGeometry>(null)
 
-  const { positions, colors } = useMemo(() => {
+  useEffect(() => {
+    if (!geometryRef.current) return
+
     const pos = new Float32Array(signal.length * 3)
     const cols = new Float32Array(signal.length * 3)
     const baseColor = new THREE.Color(color)
     
+    // Read physics
+    const warmth = physicsRef ? physicsRef.current.warmth : 0;
+    const stability = physicsRef ? physicsRef.current.stability : 1.0;
+    
+    const jitterAmount = 0.001 + (warmth * 0.02);
+    
+    let glitchX = 0;
+    let glitchY = 0;
+    if (stability < 0.99 && Math.random() > stability) {
+         glitchX = (Math.random() - 0.5) * width * 0.2;
+         glitchY = (Math.random() - 0.5) * height * 0.2;
+    }
+
     // 1. Calculate Positions
     for (let i = 0; i < signal.length; i++) {
       const x = (i / (signal.length - 1)) * width - width / 2
       const clippedAmplitude = Math.max(-1, Math.min(1, signal[i] * amplitudeScale))
       const y = clippedAmplitude * (height / 2)
       
-      pos[i * 3] = x
-      pos[i * 3 + 1] = y
+      // Apply Jitter
+      const jX = (Math.random() - 0.5) * jitterAmount + glitchX;
+      const jY = (Math.random() - 0.5) * jitterAmount + glitchY;
+
+      pos[i * 3] = x + jX
+      pos[i * 3 + 1] = y + jY
       pos[i * 3 + 2] = 0
     }
 
@@ -65,15 +86,9 @@ export default function Waveform({
       cols[base + 2] = baseColor.b * intensity
     }
 
-    return { positions: pos, colors: cols }
-  }, [signal, width, height, amplitudeScale, color])
-
-  useEffect(() => {
-    if (geometryRef.current) {
-      geometryRef.current.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-      geometryRef.current.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    }
-  }, [positions, colors])
+    geometryRef.current.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geometryRef.current.setAttribute('color', new THREE.BufferAttribute(cols, 3))
+  }, [signal, width, height, amplitudeScale, color, physicsRef])
 
   return (
     <group>
