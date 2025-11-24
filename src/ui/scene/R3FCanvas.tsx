@@ -25,6 +25,7 @@ import useTextSignal from "../../hooks/useTextSignal";
 import usePlanetSignal from "../../hooks/usePlanetSignal";
 import useChaosSignal from "../../hooks/useChaosSignal";
 import useBrainSignal from "../../hooks/useBrainSignal";
+import useEyeSignal from "../../hooks/useEyeSignal";
 
 import { createTestSignal } from "../../utils/signalGenerator";
 
@@ -53,6 +54,7 @@ const R3FCanvas = () => {
             "3D Planet": "planet",
             "Chaos Attractor": "chaos",
             "3D Brain": "brain",
+            "3D Eye": "eye",
           },
           value: "cube",
           label: "Figure",
@@ -83,7 +85,8 @@ const R3FCanvas = () => {
       figureType === "cube" ||
       figureType === "planet" ||
       figureType === "chaos" ||
-      figureType === "brain"
+      figureType === "brain" ||
+      figureType === "eye"
     )
       return 8;
     // Use the actual text length that will be rendered (substring 0, 12)
@@ -277,6 +280,16 @@ const R3FCanvas = () => {
     gridCols,
   });
 
+  // Eye Signal Generator
+  const { signalA: eyeA, signalB: eyeB } = useEyeSignal({
+    active: figureType === "eye",
+    pointsCount: dynamicPointsCount,
+    cloneCount,
+    layoutMode: layoutMode as "polygon" | "grid",
+    gridRows,
+    gridCols,
+  });
+
   // Speed Ramp Logic for Cube/Text Mode
   useEffect(() => {
     if (
@@ -284,7 +297,8 @@ const R3FCanvas = () => {
       figureType === "text" ||
       figureType === "planet" ||
       figureType === "chaos" ||
-      figureType === "brain"
+      figureType === "brain" ||
+      figureType === "eye"
     ) {
       let frameId: number;
       const startTime = performance.now();
@@ -437,9 +451,11 @@ const R3FCanvas = () => {
             ? chaosA
             : figureType === "brain"
               ? brainA
-              : liveWindow.some((v) => v !== 0)
-                ? liveWindow
-                : fallback;
+              : figureType === "eye"
+                ? eyeA
+                : liveWindow.some((v) => v !== 0)
+                  ? liveWindow
+                  : fallback;
 
   const secondarySignal = useMemo(() => {
     const ratioFreq = 660;
@@ -480,9 +496,11 @@ const R3FCanvas = () => {
             ? chaosA
             : figureType === "brain"
               ? brainA
-              : isStereoXY && leftXY.some((v) => v !== 0)
-                ? leftXY
-                : signalToDraw;
+              : figureType === "eye"
+                ? eyeA
+                : isStereoXY && leftXY.some((v) => v !== 0)
+                  ? leftXY
+                  : signalToDraw;
   const xySignalB =
     figureType === "cube"
       ? cubeB
@@ -494,9 +512,11 @@ const R3FCanvas = () => {
             ? chaosB
             : figureType === "brain"
               ? brainB
-              : isStereoXY && rightXY.some((v) => v !== 0)
-                ? rightXY
-                : secondarySignal;
+              : figureType === "eye"
+                ? eyeB
+                : isStereoXY && rightXY.some((v) => v !== 0)
+                  ? rightXY
+                  : secondarySignal;
 
   // Feature mapping
   const scaleMod = 1 + rmsGlobal * scaleGain;
@@ -567,12 +587,13 @@ const R3FCanvas = () => {
               width={8}
               height={6}
               scaleX={
-                (figureType === "text" || figureType === "chaos" || figureType === "brain" ? 1 : 1.2) *
+                (figureType === "text" || figureType === "chaos" || figureType === "brain" || figureType === "eye" ? 1 : 1.2) *
                 (figureType === "cube" ||
                 figureType === "text" ||
                 figureType === "planet" ||
                 figureType === "chaos" ||
-                figureType === "brain"
+                figureType === "brain" ||
+                figureType === "eye"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -580,12 +601,13 @@ const R3FCanvas = () => {
                 (figureType === "default" ? beatFlash : 1)
               }
               scaleY={
-                (figureType === "text" || figureType === "chaos" || figureType === "brain" ? 1 : 1.2) *
+                (figureType === "text" || figureType === "chaos" || figureType === "brain" || figureType === "eye" ? 1 : 1.2) *
                 (figureType === "cube" ||
                 figureType === "text" ||
                 figureType === "planet" ||
                 figureType === "chaos" ||
-                figureType === "brain"
+                figureType === "brain" ||
+                figureType === "eye"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -610,7 +632,8 @@ const R3FCanvas = () => {
                 figureType === "text" ||
                 figureType === "planet" ||
                 figureType === "chaos" ||
-                figureType === "brain"
+                figureType === "brain" ||
+                figureType === "eye"
                   ? xySignalB
                   : undefined
               }
@@ -620,12 +643,13 @@ const R3FCanvas = () => {
               height={6}
               amplitudeScale={autoGain ? 1.5 * dynamicScale : manualGain}
               scaleX={
-                (figureType === "text" || figureType === "chaos" || figureType === "brain" ? 1 : 1.2) *
+                (figureType === "text" || figureType === "chaos" || figureType === "brain" || figureType === "eye" ? 1 : 1.2) *
                 (figureType === "cube" ||
                 figureType === "text" ||
                 figureType === "planet" ||
                 figureType === "chaos" ||
-                figureType === "brain"
+                figureType === "brain" ||
+                figureType === "eye"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -633,12 +657,13 @@ const R3FCanvas = () => {
                 (figureType === "default" ? beatFlash : 1)
               }
               scaleY={
-                (figureType === "text" || figureType === "chaos" || figureType === "brain" ? 1 : 1.2) *
+                (figureType === "text" || figureType === "chaos" || figureType === "brain" || figureType === "eye" ? 1 : 1.2) *
                 (figureType === "cube" ||
                 figureType === "text" ||
                 figureType === "planet" ||
                 figureType === "chaos" ||
-                figureType === "brain"
+                figureType === "brain" ||
+                figureType === "eye"
                   ? 1
                   : isStereoXY
                     ? xyScale
