@@ -2,6 +2,10 @@
 
 Interactive oscilloscope visualization editor built with React, Three.js, and Web Audio API.
 
+> **“Luz que siente. Geometría que narra emociones. Un organismo nacido del sonido, que respira en curvas, vibra con el ritmo, recuerda, evoluciona y se expresa.”**
+>
+> — *[Manifiesto Estético: El Osciloscopio Vivo](docs/AESTHETIC_MANIFESTO.md)*
+
 ## Features
 
 ### Audio Sources

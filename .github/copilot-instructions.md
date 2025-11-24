@@ -201,5 +201,20 @@ These instructions capture current, observable patterns in this React + TypeScri
 - Validate build: `npm run build` (type + bundle) after significant TS changes.
 - Keep diffs focused: one conceptual change per commit (feature, refactor, chore).
 
+## Aesthetic Manifesto: "The Living Oscilloscope"
+
+The project is guided by the [Aesthetic Manifesto](docs/AESTHETIC_MANIFESTO.md). When making visual decisions, adhere to these principles:
+
+1.  **Living Entity**: The beam is a conscious stroke with intention, memory (persistence), and internal state (brightness). It is not just a line.
+2.  **Analog-Digital Duality**: Balance "Analog Warmth" (noise, instability, glow) with "Digital Precision" (geometry, smooth transitions).
+3.  **Music as Emotion**:
+    *   **Bass**: Vitality, wide movements.
+    *   **Mids**: Presence, calligraphic strokes.
+    *   **Highs**: Spark, fine details.
+    *   **Silence**: Introspection, breathing.
+4.  **Geometry as Language**: Use organic Lissajous, parametric shapes, and controlled glitches to express emotional states.
+5.  **Visual Palette**: Pure neon light (Green, Blue, Magenta, Yellow) against deep protective darkness. High emotional contrast.
+6.  **Behavior**: Never static, never predictable. Seek emotional beauty over mathematical perfection.
+
 ---
 Feedback requested: Are there domain-specific visuals, oscilloscope data sources, or planned integrations not yet reflected that should guide component/data layer structure?
