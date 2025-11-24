@@ -23,6 +23,7 @@ import useAudioInput from "../../hooks/useAudioInput";
 import useCubeSignal from "../../hooks/useCubeSignal";
 import useTextSignal from "../../hooks/useTextSignal";
 import usePlanetSignal from "../../hooks/usePlanetSignal";
+import useChaosSignal from "../../hooks/useChaosSignal";
 
 import { createTestSignal } from "../../utils/signalGenerator";
 
@@ -36,34 +37,52 @@ const R3FCanvas = () => {
   const [cubeRotationSpeed, setCubeRotationSpeed] = useState(0);
   const [cloneCount, setCloneCount] = useState(1);
 
-  const { mode, figureType, audioSource, textInput } = useControls({
-    Mode: folder({
-      mode: {
-        options: { "Y–T": "yt", XY: "xy" },
-        value: "xy",
-      },
-      figureType: {
-        options: { Default: "default", "3D Cube": "cube", "3D Text": "text", "3D Planet": "planet" },
-        value: "cube",
-        label: "Figure",
-      },
-      textInput: {
-        value: "OSCILLOSCOPE",
-        label: "Text Input",
-        render: (get) => get("Mode.figureType") === "text",
-      },
-      audioSource: {
-        options: { Microphone: "mic", "Upload File": "file" },
-        value: "mic",
-        label: "Audio Source",
-        render: (get) => get("Mode.figureType") === "default",
-      },
-    }),
-  });
+  const { mode, figureType, audioSource, textInput, attractorType } =
+    useControls({
+      Mode: folder({
+        mode: {
+          options: { "Y–T": "yt", XY: "xy" },
+          value: "xy",
+        },
+        figureType: {
+          options: {
+            Default: "default",
+            "3D Cube": "cube",
+            "3D Text": "text",
+            "3D Planet": "planet",
+            "Chaos Attractor": "chaos",
+          },
+          value: "cube",
+          label: "Figure",
+        },
+        attractorType: {
+          options: { Lorenz: "lorenz", Rossler: "rossler", Aizawa: "aizawa" },
+          value: "lorenz",
+          label: "Attractor Type",
+          render: (get) => get("Mode.figureType") === "chaos",
+        },
+        textInput: {
+          value: "OSCILLOSCOPE",
+          label: "Text Input",
+          render: (get) => get("Mode.figureType") === "text",
+        },
+        audioSource: {
+          options: { Microphone: "mic", "Upload File": "file" },
+          value: "mic",
+          label: "Audio Source",
+          render: (get) => get("Mode.figureType") === "default",
+        },
+      }),
+    });
 
   // Calculate dynamic max clones based on text length
   const maxClonesLimit = useMemo(() => {
-    if (figureType === "cube" || figureType === "planet") return 8;
+    if (
+      figureType === "cube" ||
+      figureType === "planet" ||
+      figureType === "chaos"
+    )
+      return 8;
     // Use the actual text length that will be rendered (substring 0, 12)
     const effectiveText = textInput.substring(0, 12);
     const len = effectiveText.length || 1;
@@ -167,7 +186,18 @@ const R3FCanvas = () => {
   );
 
   // Centralized audio input management (mic/file)
-  const { loadAudioFile, audioBuffer, context, seekTo, startTime, isPlaying, play, pause, stop, pausedAt } = useAudioInput({
+  const {
+    loadAudioFile,
+    audioBuffer,
+    context,
+    seekTo,
+    startTime,
+    isPlaying,
+    play,
+    pause,
+    stop,
+    pausedAt,
+  } = useAudioInput({
     source: audioSource as "mic" | "file",
   });
 
@@ -221,9 +251,26 @@ const R3FCanvas = () => {
     gridCols,
   });
 
+  // Chaos Signal Generator
+  const { signalA: chaosA, signalB: chaosB } = useChaosSignal({
+    active: figureType === "chaos",
+    pointsCount: dynamicPointsCount,
+    rotationSpeed: cubeRotationSpeed,
+    cloneCount,
+    layoutMode: layoutMode as "polygon" | "grid",
+    gridRows,
+    gridCols,
+    attractorType: attractorType as "lorenz" | "rossler" | "aizawa",
+  });
+
   // Speed Ramp Logic for Cube/Text Mode
   useEffect(() => {
-    if (figureType === "cube" || figureType === "text" || figureType === "planet") {
+    if (
+      figureType === "cube" ||
+      figureType === "text" ||
+      figureType === "planet" ||
+      figureType === "chaos"
+    ) {
       let frameId: number;
       const startTime = performance.now();
       const duration = 30000; // 30 seconds ramp for smoother buildup
@@ -273,8 +320,8 @@ const R3FCanvas = () => {
         const targetSpeed = pointsBase * 60; // Traverse full buffer 60 times a second? No, once per frame (60fps)
         // Actually, speed is points per second.
         // To draw the whole shape once per frame: speed = pointsCount * 60.
-        
-        const startSpeed = 1000; 
+
+        const startSpeed = 1000;
 
         // Quartic ease-in: starts very slow, accelerates steeply at the end
         const ease = Math.pow(progress, 4);
@@ -283,7 +330,7 @@ const R3FCanvas = () => {
         setBeamSpeed(current);
 
         // Ramp rotation speed: Start static (0) and ramp to 1
-        const rotationEase = Math.pow(progress, 3); 
+        const rotationEase = Math.pow(progress, 3);
         setCubeRotationSpeed(rotationEase);
 
         if (progress < 1) {
@@ -307,7 +354,14 @@ const R3FCanvas = () => {
       }, 0);
       return () => clearTimeout(timeoutId);
     }
-  }, [figureType, enableFormation, formationDelay, effectiveTargetClones, layoutMode, dynamicPointsCount]);
+  }, [
+    figureType,
+    enableFormation,
+    formationDelay,
+    effectiveTargetClones,
+    layoutMode,
+    dynamicPointsCount,
+  ]);
 
   // Read-only monitors
   // useControls(
@@ -346,9 +400,11 @@ const R3FCanvas = () => {
         ? textA
         : figureType === "planet"
           ? planetA
-          : liveWindow.some((v) => v !== 0)
-            ? liveWindow
-            : fallback;
+          : figureType === "chaos"
+            ? chaosA
+            : liveWindow.some((v) => v !== 0)
+              ? liveWindow
+              : fallback;
 
   const secondarySignal = useMemo(() => {
     const ratioFreq = 660;
@@ -385,9 +441,11 @@ const R3FCanvas = () => {
         ? textA
         : figureType === "planet"
           ? planetA
-          : isStereoXY && leftXY.some((v) => v !== 0)
-            ? leftXY
-            : signalToDraw;
+          : figureType === "chaos"
+            ? chaosA
+            : isStereoXY && leftXY.some((v) => v !== 0)
+              ? leftXY
+              : signalToDraw;
   const xySignalB =
     figureType === "cube"
       ? cubeB
@@ -395,9 +453,11 @@ const R3FCanvas = () => {
         ? textB
         : figureType === "planet"
           ? planetB
-          : isStereoXY && rightXY.some((v) => v !== 0)
-            ? rightXY
-            : secondarySignal;
+          : figureType === "chaos"
+            ? chaosB
+            : isStereoXY && rightXY.some((v) => v !== 0)
+              ? rightXY
+              : secondarySignal;
 
   // Feature mapping
   const scaleMod = 1 + rmsGlobal * scaleGain;
@@ -441,12 +501,12 @@ const R3FCanvas = () => {
 
         <group
           position={[offsetX, offsetY, 0]}
-          rotation={[0, 0, mode === "xy" && figureType === "default" ? rotateMod : 0]}
-          scale={
-            mode === "xy" && figureType === "default"
-              ? scaleMod
-              : 1
-          }
+          rotation={[
+            0,
+            0,
+            mode === "xy" && figureType === "default" ? rotateMod : 0,
+          ]}
+          scale={mode === "xy" && figureType === "default" ? scaleMod : 1}
         >
           {mode === "yt" ? (
             <Waveform
@@ -468,8 +528,11 @@ const R3FCanvas = () => {
               width={8}
               height={6}
               scaleX={
-                (figureType === "text" ? 1 : 1.2) *
-                (figureType === "cube" || figureType === "text" || figureType === "planet"
+                (figureType === "text" || figureType === "chaos" ? 1 : 1.2) *
+                (figureType === "cube" ||
+                figureType === "text" ||
+                figureType === "planet" ||
+                figureType === "chaos"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -477,8 +540,11 @@ const R3FCanvas = () => {
                 (figureType === "default" ? beatFlash : 1)
               }
               scaleY={
-                (figureType === "text" ? 1 : 1.2) *
-                (figureType === "cube" || figureType === "text" || figureType === "planet"
+                (figureType === "text" || figureType === "chaos" ? 1 : 1.2) *
+                (figureType === "cube" ||
+                figureType === "text" ||
+                figureType === "planet" ||
+                figureType === "chaos"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -498,7 +564,11 @@ const R3FCanvas = () => {
             <WaveformTrail
               signal={signalToDraw}
               signalB={
-                mode === "xy" || figureType === "cube" || figureType === "text" || figureType === "planet"
+                mode === "xy" ||
+                figureType === "cube" ||
+                figureType === "text" ||
+                figureType === "planet" ||
+                figureType === "chaos"
                   ? xySignalB
                   : undefined
               }
@@ -508,8 +578,11 @@ const R3FCanvas = () => {
               height={6}
               amplitudeScale={autoGain ? 1.5 * dynamicScale : manualGain}
               scaleX={
-                (figureType === "text" ? 1 : 1.2) *
-                (figureType === "cube" || figureType === "text" || figureType === "planet"
+                (figureType === "text" || figureType === "chaos" ? 1 : 1.2) *
+                (figureType === "cube" ||
+                figureType === "text" ||
+                figureType === "planet" ||
+                figureType === "chaos"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -517,8 +590,11 @@ const R3FCanvas = () => {
                 (figureType === "default" ? beatFlash : 1)
               }
               scaleY={
-                (figureType === "text" ? 1 : 1.2) *
-                (figureType === "cube" || figureType === "text" || figureType === "planet"
+                (figureType === "text" || figureType === "chaos" ? 1 : 1.2) *
+                (figureType === "cube" ||
+                figureType === "text" ||
+                figureType === "planet" ||
+                figureType === "chaos"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -533,7 +609,10 @@ const R3FCanvas = () => {
 
         <EffectComposer>
           <Bloom
-            intensity={bloomIntensity * (beat.isBeat && figureType === "default" ? 1.2 : 1)}
+            intensity={
+              bloomIntensity *
+              (beat.isBeat && figureType === "default" ? 1.2 : 1)
+            }
             luminanceThreshold={bloomThreshold}
             luminanceSmoothing={0.9}
             mipmapBlur
