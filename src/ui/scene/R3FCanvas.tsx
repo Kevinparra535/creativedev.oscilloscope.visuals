@@ -129,6 +129,11 @@ const R3FCanvas = () => {
     },
   });
 
+  const { enableRotation, zDepth } = useControls("3D Volumetric", {
+    enableRotation: { value: false, label: "Enable Rotation" },
+    zDepth: { value: 0, min: 0, max: 20, step: 0.1, label: "Time Depth" },
+  });
+
   // Ensure we don't exceed the limit even if the slider value is stale
   const effectiveTargetClones =
     layoutMode === "grid"
@@ -400,7 +405,7 @@ const R3FCanvas = () => {
         gl={{ antialias: true, alpha: false }}
       >
         <color attach="background" args={["#050805"]} />
-        <SceneSetup />
+        <SceneSetup enableRotation={enableRotation} />
         <CRTScreen width={SCREEN_WIDTH} height={SCREEN_HEIGHT} />
 
         <GridOverlay
@@ -460,6 +465,7 @@ const R3FCanvas = () => {
               color="#00ff00"
               mode={mode === "yt" ? "yt" : "xy"}
               speed={beamSpeed}
+              zDepth={zDepth}
             />
           )}
         </group>

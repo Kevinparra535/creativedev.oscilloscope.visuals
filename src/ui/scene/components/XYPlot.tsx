@@ -12,6 +12,7 @@ interface XYPlotProps {
   color?: string;
   mode?: "yt" | "xy";
   speed?: number; // Traversal speed (buffer indices per second)
+  zDepth?: number; // Volumetric depth (Time Tunnel)
 }
 
 export default function XYPlot({
@@ -24,6 +25,7 @@ export default function XYPlot({
   color = "#00ff00",
   mode = "yt",
   speed = 1000, // Default speed
+  zDepth = 0,
 }: XYPlotProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const lightRef = useRef<THREE.PointLight>(null);
@@ -119,14 +121,22 @@ export default function XYPlot({
         const idx = Math.floor(currentIndex) % len;
         const safeIdx = idx < 0 ? idx + len : idx; // Handle negative?
 
-        currentX = signalA[safeIdx] * halfWidth * scaleX;
-        currentY = signalB[safeIdx] * halfHeight * scaleY;
+        // Analog Jitter (Section D: Noise/Imperfection)
+        // Simulates electronic noise in deflection coils
+        const jitterAmount = 0.002; 
+        const jitterX = (Math.random() - 0.5) * jitterAmount;
+        const jitterY = (Math.random() - 0.5) * jitterAmount;
+
+        currentX = (signalA[safeIdx] * halfWidth * scaleX) + jitterX;
+        currentY = (signalB[safeIdx] * halfHeight * scaleY) + jitterY;
 
         meshRef.current.position.set(currentX, currentY, 0.1);
         lightRef.current.position.set(currentX, currentY, 0.1);
 
         // Update Trail Buffer
         const posArray = trailGeoRef.current.attributes.position
+          .array as Float32Array;
+        const colArray = trailGeoRef.current.attributes.color
           .array as Float32Array;
 
         // Fill buffer backwards from current index
@@ -136,15 +146,54 @@ export default function XYPlot({
           let sampleIdx = Math.floor(currentIndex - i) % len;
           if (sampleIdx < 0) sampleIdx += len;
 
-          const x = signalA[sampleIdx] * halfWidth * scaleX;
-          const y = signalB[sampleIdx] * halfHeight * scaleY;
+          // Apply jitter to trail too for coherent noise look
+          const tJitterX = (Math.random() - 0.5) * (jitterAmount * 0.5);
+          const tJitterY = (Math.random() - 0.5) * (jitterAmount * 0.5);
+
+          const x = (signalA[sampleIdx] * halfWidth * scaleX) + tJitterX;
+          const y = (signalB[sampleIdx] * halfHeight * scaleY) + tJitterY;
+
+          // Volumetric Z (Time Tunnel)
+          // Newest (i=0) -> Z=0.1
+          // Oldest (i=max) -> Z = 0.1 - zDepth
+          // We keep the slight offset (0.1) to stay in front of the screen plane
+          const z = 0.1 - (i / activeTrailLength) * zDepth;
 
           posArray[i * 3] = x;
           posArray[i * 3 + 1] = y;
-          posArray[i * 3 + 2] = 0.1 - i * 0.0001; // Slight Z-fighting prevention
+          posArray[i * 3 + 2] = z;
+          
+          // Velocity/Intensity Simulation (Section D: Brightness)
+          // Calculate distance to previous point to estimate velocity
+          // Slower = Brighter
+          let prevIdx = Math.floor(currentIndex - i - 1) % len;
+          if (prevIdx < 0) prevIdx += len;
+          
+          const prevX = signalA[prevIdx] * halfWidth * scaleX;
+          const prevY = signalB[prevIdx] * halfHeight * scaleY;
+          
+          const dist = Math.sqrt(Math.pow(x - prevX, 2) + Math.pow(y - prevY, 2));
+          // Inverse relationship: High distance (fast) -> Low opacity boost
+          // We clamp it so it doesn't disappear completely
+          const velocityFactor = Math.min(1.0, 0.05 / (dist + 0.01)); 
+          
+          // Re-calculate color with velocity factor
+          // Base fade based on age (i)
+          const t = 1 - i / (activeTrailLength - 1);
+          const ageAlpha = Math.pow(t, 2);
+          
+          // Combine Age + Velocity
+          // The tip (i=0) is always bright. The trail varies by speed.
+          const finalIntensity = i < 5 ? 1.0 : ageAlpha * (0.5 + velocityFactor * 0.5);
+
+          const c = new THREE.Color(color);
+          colArray[i * 3] = c.r * finalIntensity;
+          colArray[i * 3 + 1] = c.g * finalIntensity;
+          colArray[i * 3 + 2] = c.b * finalIntensity;
         }
 
         trailGeoRef.current.attributes.position.needsUpdate = true;
+        trailGeoRef.current.attributes.color.needsUpdate = true;
       }
     }
   });

@@ -1,6 +1,10 @@
 import { CameraControls } from '@react-three/drei'
 
-export function SceneSetup() {
+interface SceneSetupProps {
+  enableRotation?: boolean;
+}
+
+export function SceneSetup({ enableRotation = false }: SceneSetupProps) {
   return (
     <>
       {/* Ambient light for overall illumination */}
@@ -12,21 +16,21 @@ export function SceneSetup() {
       {/* Directional light for depth */}
       <directionalLight position={[5, 5, 5]} intensity={0.4} />
       
-      {/* Camera controls: Dolly only (Zoom) */}
+      {/* Camera controls */}
       <CameraControls
-        minDistance={5}
-        maxDistance={20}
-        azimuthRotateSpeed={0}
-        polarRotateSpeed={0}
+        minDistance={2}
+        maxDistance={30}
+        azimuthRotateSpeed={enableRotation ? 1 : 0}
+        polarRotateSpeed={enableRotation ? 1 : 0}
         truckSpeed={0}
         mouseButtons={{
-          left: 0, // No rotation
+          left: enableRotation ? 1 : 0, // Rotate if enabled
           middle: 0, // No pan
           right: 0, // No truck
           wheel: 8, // Dolly (Zoom)
         }}
         touches={{
-          one: 0,
+          one: enableRotation ? 1 : 0,
           two: 0,
           three: 0
         }}
