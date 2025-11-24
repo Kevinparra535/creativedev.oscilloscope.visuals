@@ -30,7 +30,8 @@ export function SceneSetup({ enableRotation = false }: SceneSetupProps) {
           wheel: 8, // Dolly (Zoom)
         }}
         touches={{
-          one: enableRotation ? 1 : 0,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          one: (enableRotation ? 1 : 0) as any,
           two: 0,
           three: 0
         }}

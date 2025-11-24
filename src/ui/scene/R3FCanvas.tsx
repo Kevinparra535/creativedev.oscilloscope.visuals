@@ -8,7 +8,7 @@ import {
   Noise,
 } from "@react-three/postprocessing";
 
-import AudioFileUpload from "../components/AudioFileUpload";
+import AudioTimeline from "../components/AudioTimeline";
 import CRTScreen from "./components/CRTScreen.tsx";
 import GridOverlay from "./components/GridOverlay.tsx";
 import { SceneSetup } from "./components/SceneSetup.tsx";
@@ -31,7 +31,6 @@ const SCREEN_WIDTH = 8;
 const SCREEN_HEIGHT = 6;
 
 const R3FCanvas = () => {
-  const [uploadedFile, setUploadedFile] = useState<string>("");
   const [beamSpeed, setBeamSpeed] = useState(1000);
   const [cubeRotationSpeed, setCubeRotationSpeed] = useState(0);
   const [cloneCount, setCloneCount] = useState(1);
@@ -167,13 +166,12 @@ const R3FCanvas = () => {
   );
 
   // Centralized audio input management (mic/file)
-  const { loadAudioFile } = useAudioInput({
+  const { loadAudioFile, audioBuffer, context, seekTo, startTime, isPlaying, play, pause, stop, pausedAt } = useAudioInput({
     source: audioSource as "mic" | "file",
   });
 
   const handleFileUpload = (file: File) => {
     loadAudioFile(file);
-    setUploadedFile(file.name);
   };
 
   // Audio features for visual mapping
@@ -394,10 +392,17 @@ const R3FCanvas = () => {
 
   return (
     <CanvasContainer>
-      <AudioFileUpload
-        onFileSelect={handleFileUpload}
-        currentFile={uploadedFile}
-        show={figureType === "default" && audioSource === "file"}
+      <AudioTimeline
+        audioBuffer={audioBuffer}
+        context={context}
+        startTime={startTime}
+        pausedAt={pausedAt}
+        isPlaying={isPlaying}
+        onSeek={seekTo}
+        onFileUpload={handleFileUpload}
+        onPlay={play}
+        onPause={pause}
+        onStop={stop}
       />
       <Leva collapsed />
       <Canvas
@@ -418,9 +423,9 @@ const R3FCanvas = () => {
 
         <group
           position={[offsetX, offsetY, 0]}
-          rotation={[0, 0, mode === "xy" ? rotateMod : 0]}
+          rotation={[0, 0, mode === "xy" && figureType === "default" ? rotateMod : 0]}
           scale={
-            mode === "xy" || figureType === "cube" || figureType === "text"
+            mode === "xy" && figureType === "default"
               ? scaleMod
               : 1
           }
@@ -451,7 +456,7 @@ const R3FCanvas = () => {
                   : isStereoXY
                     ? xyScale
                     : 1) *
-                beatFlash
+                (figureType === "default" ? beatFlash : 1)
               }
               scaleY={
                 (figureType === "text" ? 1 : 1.2) *
@@ -460,7 +465,7 @@ const R3FCanvas = () => {
                   : isStereoXY
                     ? xyScale
                     : 1) *
-                beatFlash
+                (figureType === "default" ? beatFlash : 1)
               }
               color="#00ff00"
               mode={mode === "yt" ? "yt" : "xy"}
@@ -491,7 +496,7 @@ const R3FCanvas = () => {
                   : isStereoXY
                     ? xyScale
                     : 1) *
-                beatFlash
+                (figureType === "default" ? beatFlash : 1)
               }
               scaleY={
                 (figureType === "text" ? 1 : 1.2) *
@@ -500,7 +505,7 @@ const R3FCanvas = () => {
                   : isStereoXY
                     ? xyScale
                     : 1) *
-                beatFlash
+                (figureType === "default" ? beatFlash : 1)
               }
               color="#00ff00"
               lineWidth={0.02}
@@ -510,7 +515,7 @@ const R3FCanvas = () => {
 
         <EffectComposer>
           <Bloom
-            intensity={bloomIntensity * (beat.isBeat ? 1.2 : 1)}
+            intensity={bloomIntensity * (beat.isBeat && figureType === "default" ? 1.2 : 1)}
             luminanceThreshold={bloomThreshold}
             luminanceSmoothing={0.9}
             mipmapBlur
