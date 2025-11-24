@@ -29,7 +29,17 @@ import useEyeSignal from "../../hooks/useEyeSignal";
 
 import { createTestSignal } from "../../utils/signalGenerator";
 
-import { CanvasContainer } from "../styles/ScopeControls.styled";
+import {
+  CanvasContainer,
+  ModalOverlay,
+  ModalContent,
+  ModalTitle,
+  TextArea,
+  ButtonGroup,
+  Button,
+  LoaderContainer,
+  Spinner,
+} from "../styles/ScopeControls.styled";
 
 const SCREEN_WIDTH = 8;
 const SCREEN_HEIGHT = 6;
@@ -38,6 +48,11 @@ const R3FCanvas = () => {
   const [beamSpeed, setBeamSpeed] = useState(1000);
   const [cubeRotationSpeed, setCubeRotationSpeed] = useState(0);
   const [cloneCount, setCloneCount] = useState(1);
+
+  // Analysis Modal State
+  const [showModal, setShowModal] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [promptInput, setPromptInput] = useState("");
 
   const { mode, figureType, audioSource, textInput, attractorType } =
     useControls({
@@ -203,12 +218,32 @@ const R3FCanvas = () => {
     pause,
     stop,
     pausedAt,
+    analysis,
+    isAnalyzing,
+    analyzeAudio,
   } = useAudioInput({
     source: audioSource as "mic" | "file",
   });
 
   const handleFileUpload = (file: File) => {
-    loadAudioFile(file);
+    console.log("File uploaded:", file.name);
+    setPendingFile(file);
+    setPromptInput(""); // Reset prompt
+    setShowModal(true);
+    loadAudioFile(file); // Pre-load buffer (but don't play yet)
+  };
+
+  const handleStartAnalysis = () => {
+    if (pendingFile) {
+      setShowModal(false);
+      analyzeAudio(pendingFile, promptInput);
+    }
+  };
+
+  const handleCancelAnalysis = () => {
+    setShowModal(false);
+    setPendingFile(null);
+    stop(); // Stop any pre-loaded audio
   };
 
   // Audio features for visual mapping
@@ -529,19 +564,6 @@ const R3FCanvas = () => {
 
   return (
     <CanvasContainer>
-      <AudioTimeline
-        audioBuffer={audioBuffer}
-        context={context}
-        startTime={startTime}
-        pausedAt={pausedAt}
-        isPlaying={isPlaying}
-        onSeek={seekTo}
-        onFileUpload={handleFileUpload}
-        onPlay={play}
-        onPause={pause}
-        onStop={stop}
-      />
-      <Leva collapsed />
       <Canvas
         camera={{ position: [0, 0, 12], fov: 50 }}
         gl={{ antialias: true, alpha: false }}
@@ -587,7 +609,12 @@ const R3FCanvas = () => {
               width={8}
               height={6}
               scaleX={
-                (figureType === "text" || figureType === "chaos" || figureType === "brain" || figureType === "eye" ? 1 : 1.2) *
+                (figureType === "text" ||
+                figureType === "chaos" ||
+                figureType === "brain" ||
+                figureType === "eye"
+                  ? 1
+                  : 1.2) *
                 (figureType === "cube" ||
                 figureType === "text" ||
                 figureType === "planet" ||
@@ -601,7 +628,12 @@ const R3FCanvas = () => {
                 (figureType === "default" ? beatFlash : 1)
               }
               scaleY={
-                (figureType === "text" || figureType === "chaos" || figureType === "brain" || figureType === "eye" ? 1 : 1.2) *
+                (figureType === "text" ||
+                figureType === "chaos" ||
+                figureType === "brain" ||
+                figureType === "eye"
+                  ? 1
+                  : 1.2) *
                 (figureType === "cube" ||
                 figureType === "text" ||
                 figureType === "planet" ||
@@ -643,7 +675,12 @@ const R3FCanvas = () => {
               height={6}
               amplitudeScale={autoGain ? 1.5 * dynamicScale : manualGain}
               scaleX={
-                (figureType === "text" || figureType === "chaos" || figureType === "brain" || figureType === "eye" ? 1 : 1.2) *
+                (figureType === "text" ||
+                figureType === "chaos" ||
+                figureType === "brain" ||
+                figureType === "eye"
+                  ? 1
+                  : 1.2) *
                 (figureType === "cube" ||
                 figureType === "text" ||
                 figureType === "planet" ||
@@ -657,7 +694,12 @@ const R3FCanvas = () => {
                 (figureType === "default" ? beatFlash : 1)
               }
               scaleY={
-                (figureType === "text" || figureType === "chaos" || figureType === "brain" || figureType === "eye" ? 1 : 1.2) *
+                (figureType === "text" ||
+                figureType === "chaos" ||
+                figureType === "brain" ||
+                figureType === "eye"
+                  ? 1
+                  : 1.2) *
                 (figureType === "cube" ||
                 figureType === "text" ||
                 figureType === "planet" ||
@@ -690,6 +732,56 @@ const R3FCanvas = () => {
           <Noise opacity={0.05} />
         </EffectComposer>
       </Canvas>
+
+      <AudioTimeline
+        audioBuffer={audioBuffer}
+        context={context}
+        startTime={startTime}
+        pausedAt={pausedAt}
+        isPlaying={isPlaying}
+        onSeek={seekTo}
+        onFileUpload={handleFileUpload}
+        onPlay={play}
+        onPause={pause}
+        onStop={stop}
+      />
+
+      {/* Analysis Modal */}
+      {showModal && (
+        <ModalOverlay>
+          <ModalContent>
+            <ModalTitle>AI Context Analysis</ModalTitle>
+            <div style={{ color: "#00ff00", fontSize: "12px", opacity: 0.8 }}>
+              Provide context for the AI to analyze the emotional
+              characteristics of this track.
+            </div>
+            <TextArea
+              placeholder="e.g. This is a melancholic jazz track about lost love..."
+              value={promptInput}
+              onChange={(e) => setPromptInput(e.target.value)}
+              autoFocus
+            />
+            <ButtonGroup>
+              <Button onClick={handleCancelAnalysis}>Cancel</Button>
+              <Button variant="primary" onClick={handleStartAnalysis}>
+                Analyze & Play
+              </Button>
+            </ButtonGroup>
+          </ModalContent>
+        </ModalOverlay>
+      )}
+
+      {/* Loading State */}
+      {isAnalyzing && (
+        <ModalOverlay>
+          <LoaderContainer>
+            <Spinner />
+            <div>Analyzing Audio Context...</div>
+          </LoaderContainer>
+        </ModalOverlay>
+      )}
+
+      <Leva collapsed />
     </CanvasContainer>
   );
 };

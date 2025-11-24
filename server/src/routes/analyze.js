@@ -30,12 +30,12 @@ router.post('/audio', upload.single('audio'), async (req, res) => {
     // 1. Transcribe audio to text (using Whisper, etc.)
     // 2. Send text to Ollama for analysis.
     
-    // For now, we will simulate a prompt based on the file existence
-    // or assume the user wants to send a prompt *about* the audio context.
-    
+    // Use provided prompt or default
+    const userPrompt = req.body.prompt || "Analyze the potential emotional characteristics of this audio file.";
+
     const analysis = await ollamaService.analyzeContext({
       filename: req.file.filename,
-      prompt: "Analyze the potential emotional characteristics of a generic audio waveform." // Placeholder
+      prompt: userPrompt
     });
 
     res.json({

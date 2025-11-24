@@ -39,6 +39,38 @@ const useAudioInput = ({ source, onSourceReady }: UseAudioInputOptions) => {
   const startTimeRef = useRef<number>(0);
   const pausedAtRef = useRef<number>(0);
 
+  // Analysis State
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  const analyzeAudio = async (file: File, prompt?: string) => {
+    setIsAnalyzing(true);
+    setAnalysis(null);
+    const formData = new FormData();
+    formData.append("audio", file);
+    if (prompt) formData.append("prompt", prompt);
+
+    try {
+      // Assuming server runs on port 3001
+      const response = await fetch("http://localhost:3001/api/analyze/audio", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAnalysis(data.analysis);
+        console.log("Audio Analysis Result:", data.analysis);
+        play(); // Start playback only after successful analysis
+      } else {
+        console.error("Analysis failed:", data.error);
+      }
+    } catch (error) {
+      console.error("Analysis request failed:", error);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   // Cleanup helper
   const cleanup = () => {
     if (sourceNodeRef.current) {
@@ -159,7 +191,7 @@ const useAudioInput = ({ source, onSourceReady }: UseAudioInputOptions) => {
   };
 
   // Load file from user upload
-  const loadAudioFile = async (file: File) => {
+  const loadAudioFile = async (file: File, prompt?: string) => {
     if (!contextRef.current || !analyserRef.current) return;
 
     cleanup();
@@ -175,10 +207,13 @@ const useAudioInput = ({ source, onSourceReady }: UseAudioInputOptions) => {
     // Auto-play on load
     pausedAtRef.current = 0;
     setPausedAt(0);
-    play(); // Use the play function to centralize logic
+    // play(); // Use the play function to centralize logic
 
     setIsReady(true);
     onSourceReady?.(analyserRef.current);
+
+    // Trigger Analysis
+    // analyzeAudio(file, prompt);
   };
 
   useEffect(() => {
@@ -243,6 +278,9 @@ const useAudioInput = ({ source, onSourceReady }: UseAudioInputOptions) => {
     play,
     pause,
     stop,
+    analysis,
+    isAnalyzing,
+    analyzeAudio,
   };
 };
 

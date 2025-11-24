@@ -9,10 +9,13 @@ export const COLORS = {
 export const FONT = {
   family: 'system-ui, sans-serif',
   sizeXs: '12px',
+  sizeSm: '14px',
+  sizeMd: '18px',
 };
 
 export const Z_INDEX = {
   overlay: 10,
+  modal: 100,
 };
 
 export const TRANSITION = {
