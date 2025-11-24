@@ -22,6 +22,7 @@ import useAudioFeatures from "../../hooks/useAudioFeatures";
 import useAudioInput from "../../hooks/useAudioInput";
 import useCubeSignal from "../../hooks/useCubeSignal";
 import useTextSignal from "../../hooks/useTextSignal";
+import usePlanetSignal from "../../hooks/usePlanetSignal";
 
 import { createTestSignal } from "../../utils/signalGenerator";
 
@@ -42,7 +43,7 @@ const R3FCanvas = () => {
         value: "xy",
       },
       figureType: {
-        options: { Default: "default", "3D Cube": "cube", "3D Text": "text" },
+        options: { Default: "default", "3D Cube": "cube", "3D Text": "text", "3D Planet": "planet" },
         value: "cube",
         label: "Figure",
       },
@@ -62,7 +63,7 @@ const R3FCanvas = () => {
 
   // Calculate dynamic max clones based on text length
   const maxClonesLimit = useMemo(() => {
-    if (figureType === "cube") return 8;
+    if (figureType === "cube" || figureType === "planet") return 8;
     // Use the actual text length that will be rendered (substring 0, 12)
     const effectiveText = textInput.substring(0, 12);
     const len = effectiveText.length || 1;
@@ -209,9 +210,20 @@ const R3FCanvas = () => {
     screenHeight: SCREEN_HEIGHT,
   });
 
+  // Planet Signal Generator
+  const { signalA: planetA, signalB: planetB } = usePlanetSignal({
+    active: figureType === "planet",
+    pointsCount: dynamicPointsCount,
+    rotationSpeed: cubeRotationSpeed,
+    cloneCount,
+    layoutMode: layoutMode as "polygon" | "grid",
+    gridRows,
+    gridCols,
+  });
+
   // Speed Ramp Logic for Cube/Text Mode
   useEffect(() => {
-    if (figureType === "cube" || figureType === "text") {
+    if (figureType === "cube" || figureType === "text" || figureType === "planet") {
       let frameId: number;
       const startTime = performance.now();
       const duration = 30000; // 30 seconds ramp for smoother buildup
@@ -332,9 +344,11 @@ const R3FCanvas = () => {
       ? cubeA
       : figureType === "text"
         ? textA
-        : liveWindow.some((v) => v !== 0)
-          ? liveWindow
-          : fallback;
+        : figureType === "planet"
+          ? planetA
+          : liveWindow.some((v) => v !== 0)
+            ? liveWindow
+            : fallback;
 
   const secondarySignal = useMemo(() => {
     const ratioFreq = 660;
@@ -369,17 +383,21 @@ const R3FCanvas = () => {
       ? cubeA
       : figureType === "text"
         ? textA
-        : isStereoXY && leftXY.some((v) => v !== 0)
-          ? leftXY
-          : signalToDraw;
+        : figureType === "planet"
+          ? planetA
+          : isStereoXY && leftXY.some((v) => v !== 0)
+            ? leftXY
+            : signalToDraw;
   const xySignalB =
     figureType === "cube"
       ? cubeB
       : figureType === "text"
         ? textB
-        : isStereoXY && rightXY.some((v) => v !== 0)
-          ? rightXY
-          : secondarySignal;
+        : figureType === "planet"
+          ? planetB
+          : isStereoXY && rightXY.some((v) => v !== 0)
+            ? rightXY
+            : secondarySignal;
 
   // Feature mapping
   const scaleMod = 1 + rmsGlobal * scaleGain;
@@ -451,7 +469,7 @@ const R3FCanvas = () => {
               height={6}
               scaleX={
                 (figureType === "text" ? 1 : 1.2) *
-                (figureType === "cube" || figureType === "text"
+                (figureType === "cube" || figureType === "text" || figureType === "planet"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -460,7 +478,7 @@ const R3FCanvas = () => {
               }
               scaleY={
                 (figureType === "text" ? 1 : 1.2) *
-                (figureType === "cube" || figureType === "text"
+                (figureType === "cube" || figureType === "text" || figureType === "planet"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -480,7 +498,7 @@ const R3FCanvas = () => {
             <WaveformTrail
               signal={signalToDraw}
               signalB={
-                mode === "xy" || figureType === "cube" || figureType === "text"
+                mode === "xy" || figureType === "cube" || figureType === "text" || figureType === "planet"
                   ? xySignalB
                   : undefined
               }
@@ -491,7 +509,7 @@ const R3FCanvas = () => {
               amplitudeScale={autoGain ? 1.5 * dynamicScale : manualGain}
               scaleX={
                 (figureType === "text" ? 1 : 1.2) *
-                (figureType === "cube" || figureType === "text"
+                (figureType === "cube" || figureType === "text" || figureType === "planet"
                   ? 1
                   : isStereoXY
                     ? xyScale
@@ -500,7 +518,7 @@ const R3FCanvas = () => {
               }
               scaleY={
                 (figureType === "text" ? 1 : 1.2) *
-                (figureType === "cube" || figureType === "text"
+                (figureType === "cube" || figureType === "text" || figureType === "planet"
                   ? 1
                   : isStereoXY
                     ? xyScale
