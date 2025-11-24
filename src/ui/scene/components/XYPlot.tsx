@@ -35,9 +35,8 @@ export default function XYPlot({
 
   // Trail Configuration
   // Max points for the trail line.
-  // For Cube (2000 pts), 2000 is enough to show full shape.
-  // For Audio (1024 pts), 1024 is enough.
-  const MAX_TRAIL_POINTS = 2048;
+  // Increased to 8192 to support multi-clone shapes (4000+ points)
+  const MAX_TRAIL_POINTS = 8192;
   const PERSISTENCE_SECONDS = 0.15; // How long the phosphor glows
 
   // Initialize buffers

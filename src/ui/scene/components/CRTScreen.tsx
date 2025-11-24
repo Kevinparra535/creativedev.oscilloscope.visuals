@@ -6,7 +6,7 @@ interface CRTScreenProps {
   height?: number
 }
 
-export function CRTScreen({ width = 8, height = 6 }: CRTScreenProps) {
+const CRTScreen = ({ width = 8, height = 6 }: CRTScreenProps) => {
   const meshRef = useRef<Mesh>(null)
 
   return (
@@ -35,3 +35,5 @@ export function CRTScreen({ width = 8, height = 6 }: CRTScreenProps) {
     </group>
   )
 }
+
+export default CRTScreen

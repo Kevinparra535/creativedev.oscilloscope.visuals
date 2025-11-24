@@ -6,6 +6,9 @@ interface UseCubeSignalOptions {
   pointsCount?: number;
   rotationSpeed?: number;
   cloneCount?: number;
+  layoutMode?: "polygon" | "grid";
+  gridRows?: number;
+  gridCols?: number;
 }
 
 export default function useCubeSignal({
@@ -13,6 +16,9 @@ export default function useCubeSignal({
   pointsCount = 2000,
   rotationSpeed = 1,
   cloneCount = 1,
+  layoutMode = "polygon",
+  gridRows = 2,
+  gridCols = 3,
 }: UseCubeSignalOptions) {
   const [signalA, setSignalA] = useState<Float32Array>(
     new Float32Array(pointsCount)
@@ -54,7 +60,7 @@ export default function useCubeSignal({
       const totalSegments = path.length - 1;
       
       // Multi-clone logic
-      const passes = Math.max(1, cloneCount);
+      const passes = layoutMode === "grid" ? gridRows * gridCols : Math.max(1, cloneCount);
       const pointsPerPass = Math.floor(pointsCount / passes);
       const pointsPerSegment = Math.floor(pointsPerPass / totalSegments);
 
@@ -64,7 +70,10 @@ export default function useCubeSignal({
       }
 
       // Smooth Scale Transition
-      const targetScale = passes > 1 ? 0.45 : 1.2;
+      let targetScale = passes > 1 ? 0.45 : 1.2;
+      if (layoutMode === "grid") {
+        targetScale = 0.35; // Smaller for grid
+      }
       scaleRef.current += (targetScale - scaleRef.current) * 0.05;
       const currentScale = scaleRef.current;
 
@@ -75,7 +84,20 @@ export default function useCubeSignal({
         let targetX = 0;
         let targetY = 0;
         
-        if (passes > 1) {
+        if (layoutMode === "grid") {
+          const col = pass % gridCols;
+          const row = Math.floor(pass / gridCols);
+          
+          // Grid spacing
+          const spacingX = 2.0; 
+          const spacingY = 2.0;
+          
+          const gridWidth = (gridCols - 1) * spacingX;
+          const gridHeight = (gridRows - 1) * spacingY;
+          
+          targetX = (col * spacingX) - (gridWidth / 2);
+          targetY = -((row * spacingY) - (gridHeight / 2));
+        } else if (passes > 1) {
           const radius = 1.3;
           const angle = (pass / passes) * Math.PI * 2 + Math.PI / 2;
           targetX = Math.cos(angle) * radius;
@@ -139,7 +161,7 @@ export default function useCubeSignal({
     return () => {
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [active, pointsCount, cloneCount]);
+  }, [active, pointsCount, cloneCount, layoutMode, gridRows, gridCols]);
 
   return { signalA, signalB };
 }
