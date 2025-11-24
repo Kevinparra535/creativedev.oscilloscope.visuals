@@ -8,11 +8,13 @@ Interactive oscilloscope visualization editor built with React, Three.js, and We
 
 - **Microphone**: Real-time audio capture from system microphone
 - **Upload File**: Play and visualize uploaded audio files (MP3, WAV, etc.)
+- **Playback Controls**: Full interactive control (Play, Pause, Stop, Seek, Replace File) with a visual timeline.
 
 ### Display Modes
 
 - **Y–T Mode**: Traditional time-domain waveform (voltage vs time)
 - **XY Mode**: Lissajous figures and parametric drawings (dual-channel visualization)
+- **3D Figures**: Volumetric Cube and Text modes (non-reactive, purely aesthetic).
 
 ### Analog Realism (Physics Simulation)
 
@@ -61,6 +63,8 @@ src/
 │   │       ├── WaveformTrail.tsx # Persistence trail effect
 │   │       ├── XYPlot.tsx       # XY mode beam physics renderer
 │   │       └── SceneSetup.tsx   # Lighting + camera controls
+│   ├── components/
+│   │   └── AudioTimeline.tsx    # Audio playback controls & timeline
 │   └── styled/
 │       ├── ScopeControls.tsx    # Styled UI primitives
 │       └── theme.ts             # Design tokens

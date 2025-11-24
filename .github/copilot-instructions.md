@@ -52,6 +52,7 @@ These instructions capture current, observable patterns in this React + TypeScri
   - `src/ui/scene/components/Waveform.tsx`: **core component** mapping signal array to line geometry (Y–T mode).
   - `src/ui/scene/components/XYPlot.tsx`: **Physics-based renderer**. Uses a moving "Beam Head" (Mesh + Light) and a "Trail" (BufferGeometry) to simulate CRT physics.
   - `src/ui/scene/components/SceneSetup.tsx`: scene lighting (`ambientLight`, `pointLight`, `directionalLight`) + `CameraControls` (Dolly only).
+  - `src/ui/components/AudioTimeline.tsx`: **Playback Controls**. Visual timeline with Play/Pause/Stop/Replace buttons and seek functionality.
 - Signal mapping (Y–T): `x = (i/(N-1)) * width - width/2`, `y = signal[i] * (height/2) * amplitudeScale`.
 - Signal mapping (XY): `x = signalA[i] * (width/2) * scaleX`, `y = signalB[i] * (height/2) * scaleY`.
 - Data source: start with simulated `Float32Array` signals (sine, square, noise) via `utils/signalGenerator.ts`. When ready, integrate Web Audio API (`AudioContext` + `AnalyserNode`) behind a thin hook like `useAudioSamples()`.
@@ -62,6 +63,13 @@ These instructions capture current, observable patterns in this React + TypeScri
 - Styling: grid drawn with `lineSegments` geometry; "phosphor green" (`#00ff00`) default theme; component containers use styled-components.
 - Testing/debug: `CameraControls` enabled for zoom (dolly) only. No rotation or pan allowed to maintain "seated in front of scope" perspective.
 - **FPS vs Sample Rate**: ~60 FPS vs 44.1kHz audio. Each frame selects a window (e.g. 1024 samples). Rolling vs Windowed approach chosen: POC uses Windowed for clarity; Rolling can be added for historical trail.
+
+## Audio Playback & Controls
+
+- **State Management**: `useAudioInput` manages `AudioContext`, `AudioBufferSourceNode`, and playback state (`isPlaying`, `startTime`, `pausedAt`).
+- **Paused State**: When paused or stopped, the hook tracks `pausedAt` to maintain the visual playhead position.
+- **Stop Behavior**: Clicking "Stop" resets `pausedAt` to 0, ensuring the visual timeline returns to the start.
+- **Timeline UI**: `AudioTimeline` component renders the full waveform and handles user interaction (seeking, file upload).
 
 ## Modes Architecture
 
@@ -121,6 +129,7 @@ These instructions capture current, observable patterns in this React + TypeScri
 - Performance: Update features at ~30–40Hz (not 60fps); reuse Float32Arrays; keep history buffers bounded (≤50 entries).
 - Feature Hook Return: `{ fft, rmsGlobal, bands: { low, mid, high }, beat: { isBeat, confidence, lastBeatTime }, sampleRate }`.
 - Transform Application: Wrap `<Waveform>` / `<XYPlot>` in `<group>` with `position`, `rotation`, `scale` driven by mapped values. Apply modulation params to `amplitudeScale`, `lineWidth` props.
+- **3D Figures (Cube/Text)**: These modes are purely aesthetic and **do not** react to audio features (scale/rotation) to maintain their structural integrity as requested.
 - Future Enhancements: FFT-based spectral gating (filter visual by frequency band), derivative-based glow (speed → brightness), hue shift keyed to spectral centroid, postprocessing bloom on beat.
 
 ## Artistic Canvas Vision
